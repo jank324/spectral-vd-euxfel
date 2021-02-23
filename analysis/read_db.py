@@ -1,12 +1,12 @@
 import sys
-sys.path.append("/home/xfeloper/user/tomins/ocelot_test/")
+sys.path.append("/Users/jankaiser/Documents/DESY/electron-bunch-profile-prediction")
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from pyBigBro.mint.snapshot import *
 from pyBigBro.image_proc.tds_analysis import *
 
-db = SnapshotDB("/home/xfeloper/user/tomins/ocelot_test/pyBigBro/20200124-16_12_46_test.pcl")
+db = SnapshotDB("pyBigBro/20210221-01_30_17_scan_phase1.pcl")
 df2 = db.load()
 print(db.orbit_sections)
 print(df2['BPMG.24.I1.X'])
