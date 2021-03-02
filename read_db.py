@@ -1,22 +1,19 @@
-import sys
-sys.path.append("/Users/jankaiser/Documents/DESY/electron-bunch-profile-prediction")
-import os
-import pandas as pd
 import matplotlib.pyplot as plt
-from pyBigBro.mint.snapshot import *
-from pyBigBro.image_proc.tds_analysis import *
 
-db = SnapshotDB("pyBigBro/20210221-01_30_17_scan_phase1.pcl")
+from image_proc.tds_analysis import TDSImage
+from mint.snapshot import SnapshotDB
+
+
+db = SnapshotDB("20210221-01_30_17_scan_phase1.pcl")
 df2 = db.load()
 print(db.orbit_sections)
-print(df2['BPMG.24.I1.X'])
 print(df2['timestamp'])
 print(df2["XFEL.DIAG/CAMERA/OTRA.473.B2D/IMAGE_EXT_ZMQ"])
 print(df2["XFEL.RF/LLRF.SUMVOLTAGE_CTRL/I1/SUMVOLTAGE.CHIRP.SP.1"])
 
 for path in df2["XFEL.DIAG/CAMERA/OTRA.473.B2D/IMAGE_EXT_ZMQ"].tolist():
     tds_img = TDSImage()
-    filename = "/home/xfeloper/user/tomins/ocelot_test/pyBigBro/" + path[2:-3] + "pcl"
+    filename = path[2:-3] + "pcl"
     tds_img.filename = filename
     print(tds_img.filename)
     tds_img.process()
