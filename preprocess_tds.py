@@ -101,7 +101,7 @@ def save_preprocessed_tds(input_path, output_path, seconds_per_pixel, plot=False
         pickle.dump(preprocessed, file)
 
 # Example call
-# python3 preprocess_tds.py original/20210221-01_30_17_scan_phase1.pcl tds_feb_phase1.pkl --seconds_per_pixel 4.38912e-13
+# python3 preprocess_tds.py original/20210221-01_30_17_scan_phase1.pcl tds_feb_phase1.pkl --seconds_per_pixel 4.38912e-13 --plot
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess recorded TDS data to current profiles")
