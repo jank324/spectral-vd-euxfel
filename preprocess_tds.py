@@ -1,5 +1,4 @@
 import argparse
-from ast import parse
 from functools import partial
 import pickle
 
@@ -59,7 +58,7 @@ def extract_current_profile(row, seconds_per_pixel):
     return extracted
 
 
-def preprocess_tds(tds, seconds_per_pixel):
+def preprocess_tds(tds, seconds_per_pixel, plot=False):
     tds_reduced = reduce_to_relevant_channels(tds)
 
     background = tds_reduced.loc[1:6,"tds_image"].mean()
@@ -78,13 +77,26 @@ def preprocess_tds(tds, seconds_per_pixel):
 
     extract = partial(extract_current_profile, seconds_per_pixel=seconds_per_pixel)
     preprocessed = preprocessed.apply(extract, axis=1)
+
+    if plot:
+        plot_profiles(preprocessed)
     
     return preprocessed
 
 
-def save_preprocessed_tds(input_path, output_path, seconds_per_pixel):
+def plot_profiles(preprocessed):
+    plt.figure(figsize=(18,6))
+    for i, chirp in enumerate(preprocessed.index.values):
+        plt.subplot(3, 6, i+1)
+        plt.title(f"Chirp = {chirp}")
+        plt.plot(preprocessed[chirp])
+    plt.tight_layout()
+    plt.show()
+
+
+def save_preprocessed_tds(input_path, output_path, seconds_per_pixel, plot=False):
     tds = load(input_path)
-    preprocessed = preprocess_tds(tds, seconds_per_pixel)
+    preprocessed = preprocess_tds(tds, seconds_per_pixel, plot=plot)
     with open(output_path, "wb") as file:
         pickle.dump(preprocessed, file)
 
@@ -99,6 +111,8 @@ if __name__ == "__main__":
                         help="Path to write the preprocessed data to")
     parser.add_argument("--seconds_per_pixel", type=float, required=True,
                         help="Calibration for seconds per pixel in the TDS images")
+    parser.add_argument("--plot", default=False, action="store_true",
+                        help="Show a plot of the extracted current profiles")
     args = parser.parse_args()
 
-    save_preprocessed_tds(args.input_path, args.output_path, args.seconds_per_pixel)
+    save_preprocessed_tds(args.input_path, args.output_path, args.seconds_per_pixel, plot=args.plot)
