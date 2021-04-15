@@ -1,3 +1,3 @@
-# Electron Bunch Profile Prediction
+# Current Profile Prediction
 
-Project to predict the electron bunch profile from a non-invasive CRISP measurement.
+Project to predict the current profile from a non-invasive CRISP measurement.
