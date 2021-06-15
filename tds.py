@@ -2,6 +2,7 @@ import pickle
 
 from lmfit.models import GaussianModel
 import numpy as np
+import pandas as pd
 from scipy import ndimage
 
 from mint.snapshot import SnapshotDB
@@ -13,36 +14,7 @@ def load_tds_image(path):
     return image
 
 
-def denoise(image):
-    """Denoise `image`."""
-    denoised = ndimage.uniform_filter(image, size=12)
-    denoised[denoised < 0.05 * denoised.max()] = 0
-    return denoised
-
-
-def extract_current_profile(tds_image, charge, shear, pixel_size):
-    """Extract current profile."""
-
-    seconds_per_pixel = pixel_size / shear
-
-    view = tds_image.sum(axis=0)
-    current = charge / seconds_per_pixel * view / view.sum()
-    times = np.arange(len(current)) * seconds_per_pixel
-
-    xs = np.arange(len(current))
-    model = GaussianModel()
-    guess = model.guess(current, x=xs)
-    fit = model.fit(current, guess, x=xs)
-
-    a = int(fit.params["center"].value - 5 * fit.params["sigma"].value)
-    b = int(fit.params["center"].value + 5 * fit.params["sigma"].value)
-    extracted = current[a:b]
-    extracted_times = times[a:b] - fit.params["center"].value * seconds_per_pixel
-
-    return np.vstack((extracted_times, extracted))
-
-
-def load_current_profiles(path, shear, pixel_size):
+def load_data(path):
     snapshot_db = SnapshotDB(path)
     raw = snapshot_db.load()
 
@@ -57,9 +29,21 @@ def load_current_profiles(path, shear, pixel_size):
                                 "XFEL.DIAG/CHARGE.ML/TORA.25.I1/CHARGE.ALL": "charge"})
 
     data["tds_image"] = data["tds_image_path"].apply(load_tds_image)
+    data = data.drop("tds_image_path", axis=1)
     data["beam_allowed"] = data["beam_allowed"].astype(bool)
     data["charge"] = data["charge"] * 10e-9
 
+    return data
+
+
+def denoise(image):
+    """Denoise `image`."""
+    denoised = ndimage.uniform_filter(image, size=12)
+    denoised[denoised < 0.05 * denoised.max()] = 0
+    return denoised
+
+
+def clean_tds_images(data):
     # Get background
     background = data.loc[1:6,"tds_image"].mean()
 
@@ -77,6 +61,42 @@ def load_current_profiles(path, shear, pixel_size):
 
     tds_images = tds_images.apply(denoise)
 
-    current_profiles = [extract_current_profile(tds_images[chirp], charges[chirp], shear, pixel_size) for chirp in tds_images.index]
+    return pd.DataFrame({"charge": charges, "tds_image": tds_images})
+
+
+def extract_current_profiles(data, shear, pixel_size):
+    """Extract current profile."""
+
+    seconds_per_pixel = pixel_size / shear      # s/p = m/p / m/s
+
+    for chirp in data.index:
+        charge = data.loc[chirp,"charge"]
+        tds_image = data.loc[chirp,"tds_image"]
+
+        view = tds_image.sum(axis=0)
+        current = charge / seconds_per_pixel * view / view.sum()
+        times = np.arange(len(current)) * seconds_per_pixel
+
+        xs = np.arange(len(current))
+        model = GaussianModel()
+        guess = model.guess(current, x=xs)
+        fit = model.fit(current, guess, x=xs)
+
+        a = int(fit.params["center"].value - 5 * fit.params["sigma"].value)
+        b = int(fit.params["center"].value + 5 * fit.params["sigma"].value)
+        extracted = current[a:b]
+        extracted_times = times[a:b] - fit.params["center"].value * seconds_per_pixel
+
+        data.loc[chirp,"times"] = extracted_times
+        data.loc[chirp,"currents"] = extracted
+
+    return data[["times","currents"]]
+
+
+def load_current_profiles(path, shear, pixel_size):
+    data = load_data(path)
+
+    data = clean_tds_images(data)
+    current_profiles = extract_current_profiles(data, shear, pixel_size)
 
     return current_profiles
