@@ -1,5 +1,3 @@
-import pickle
-from random import choices
 import sys
 from time import sleep
 
@@ -13,10 +11,8 @@ import numpy as np
 import PyQt5.QtCore as qtc
 import PyQt5.QtGui as qtg
 import PyQt5.QtWidgets as qtw
-from tensorflow import keras
 
-from nils.reconstruction_module import cleanup_formfactor
-from nils.simulate_spectrometer_signal import get_crisp_signal
+from spectralvd import SpectralVD
 
 
 class CurrentPlot(FigureCanvasQTAgg):
@@ -30,6 +26,7 @@ class CurrentPlot(FigureCanvasQTAgg):
         self.plot_ann, = self.ax0.plot(range(100), np.zeros(100), label="ANN", color="green")
         self.plot_nils, = self.ax0.plot(range(100), np.zeros(100), label="Nils", color="red")
 
+        self.ax0.set_ylim([0, 10])
         self.ax0.set_xlabel("s (μm)")
         self.ax0.set_ylabel("Current (kA)")
         self.ax0.legend()
@@ -40,13 +37,11 @@ class CurrentPlot(FigureCanvasQTAgg):
     
     @qtc.pyqtSlot(tuple)
     def update_ann(self, current):
-        print("update")
         s_scaled = current[0] * 1e6
         current_scaled = current[1] * 1e-3
 
         self.plot_ann.set_xdata(s_scaled)
         self.plot_ann.set_ydata(current_scaled)
-        print(current_scaled.min(), current_scaled.max())
 
         self.ax0.set_xlim([s_scaled.min(), s_scaled.max()])
         self.ax0.set_ylim([0, 10])
@@ -75,68 +70,22 @@ class AcceleratorInterfaceThread(qtc.QThread):
     def __init__(self):
         super().__init__()
 
+        self.spectralvd = SpectralVD()
+
     def run(self):
         while True:
-            crisp = self.read_crisp()
+            crisp = self.spectralvd.read_crisp()
             
-            ann_current = self.ann_reconstruction(crisp)
+            ann_current = self.spectralvd.ann_reconstruction(crisp)
             self.ann_current_updated.emit(ann_current)
 
-            nils_current = self.nils_reconstruction(crisp)
+            nils_current = self.spectralvd.nils_reconstruction(crisp)
             self.nils_current_updated.emit(nils_current)
 
             sleep(0.1)
     
     def change_grating(self, grating):
         print(f"Changing grating to {grating}")
-    
-    def load_formfactors(self):
-        with open("ocelot80k.pkl", "rb") as file:
-            data = pickle.load(file)
-        
-        currents = [(sample["s"][:1000], sample["I"][:1000]) for sample in data]
-        filtered = [(s, current) for s, current in currents if current.max() > 1000]
-        
-        def current2formfactor(s, current, grating="both"):
-            """Convert a current to its corresponding cleaned form factor."""
-            frequency, formfactor, formfactor_noise, detlim = get_crisp_signal(s, current, n_shots=10, which_set=grating)
-            clean_frequency, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor, formfactor_noise, detlim, channels_to_remove=[])
-
-            return clean_frequency, clean_formfactor
-
-        formfactors_both = [current2formfactor(*current, grating="both") for current in choices(filtered, k=10)]
-        self.formfactors = formfactors_both
-            
-    def read_crisp(self):
-        if not hasattr(self, "formfactors"):
-            self.load_formfactors()
-        
-        i = np.random.randint(0, len(self.formfactors))
-
-        return self.formfactors[i]
-    
-    def ann_reconstruction(self, crisp):
-        if not hasattr(self, "model"):
-            self.model = keras.models.load_model("models/both_model")
-        if not hasattr(self, "scalers"):
-            with open("models/both_scalers.pkl", "rb") as f:
-                self.scalers = pickle.load(f)
-        
-        crisp = crisp[1].reshape((1,-1))
-        X_scaled = self.scalers["X"].transform(crisp)
-        y_scaled = self.model.predict(X_scaled)
-        y = y_scaled / self.scalers["y"]
-
-        limit = 0.00020095917745111108
-        s = np.linspace(-limit, limit, 100)
-
-        return s, y.squeeze()
-
-    def nils_reconstruction(self, crisp):
-        limit = 0.00020095917745111108
-        s = np.linspace(-limit, limit, 100)
-
-        return s, np.random.random(100) * 6e3
 
 
 class App(qtw.QWidget):
