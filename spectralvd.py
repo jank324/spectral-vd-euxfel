@@ -2,9 +2,10 @@ import pickle
 import random
 
 import numpy as np
+from scipy.constants import speed_of_light
 from tensorflow import keras
 
-from nils.reconstruction_module import cleanup_formfactor
+from nils.reconstruction_module import cleanup_formfactor, master_recon
 from nils.simulate_spectrometer_signal import get_crisp_signal
 
 
@@ -23,34 +24,36 @@ class SpectralVD:
         
         currents = [(sample["s"][:1000], sample["I"][:1000]) for sample in data]
         filtered = [(s, current) for s, current in currents if current.max() > 1000]
-        
-        def current2formfactor(s, current, grating="both"):
-            """Convert a current to its corresponding cleaned form factor."""
-            frequency, formfactor, formfactor_noise, detlim = get_crisp_signal(s, current, n_shots=10, which_set=grating)
-            clean_frequency, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor, formfactor_noise, detlim, channels_to_remove=[])
 
-            return clean_frequency, clean_formfactor
-
-        formfactors_both = [current2formfactor(*current, grating="both") for current in random.choices(filtered, k=10)]
-        self.formfactors = formfactors_both
+        samples = random.choices(filtered, k=10)
+        self.crisp_both = [get_crisp_signal(s, current, n_shots=10, which_set="both") for s, current in samples]
     
     def read_crisp(self):
-        i = np.random.randint(0, len(self.formfactors))
-        return self.formfactors[i]
+        self.crisp_reading = random.choice(self.crisp_both)
     
-    def ann_reconstruction(self, crisp):
-        crisp = crisp[1].reshape((1,-1))
-        X_scaled = self.scalers["X"].transform(crisp)
+    def ann_reconstruction(self):
+        frequency, formfactor, formfactor_noise, detlim = self.crisp_reading
+
+        _, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor, formfactor_noise, detlim, channels_to_remove=[])
+
+        X = clean_formfactor.reshape([1,-1])
+        X_scaled = self.scalers["X"].transform(X)
         y_scaled = self.model.predict(X_scaled)
         y = y_scaled / self.scalers["y"]
+        current = y.squeeze()
 
         limit = 0.00020095917745111108
         s = np.linspace(-limit, limit, 100)
 
-        return s, y.squeeze()
+        return s, current
 
-    def nils_reconstruction(self, crisp):
-        limit = 0.00020095917745111108
-        s = np.linspace(-limit, limit, 100)
+    def nils_reconstruction(self):
+        frequency, formfactor, formfactor_noise, detlim = self.crisp_reading
+        charge = 250e-12
 
-        return s, np.random.random(100) * 6e3
+        t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
+                                     method="KKstart", channels_to_remove=[], show_plots=False)
+
+        s = t * speed_of_light
+
+        return s, current

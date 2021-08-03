@@ -26,6 +26,9 @@ class CurrentPlot(FigureCanvasQTAgg):
         self.plot_ann, = self.ax0.plot(range(100), np.zeros(100), label="ANN", color="green")
         self.plot_nils, = self.ax0.plot(range(100), np.zeros(100), label="Nils", color="red")
 
+        limit = 0.00020095917745111108
+        
+        self.ax0.set_xlim([-limit, limit])
         self.ax0.set_ylim([0, 10])
         self.ax0.set_xlabel("s (μm)")
         self.ax0.set_ylabel("Current (kA)")
@@ -74,12 +77,12 @@ class AcceleratorInterfaceThread(qtc.QThread):
 
     def run(self):
         while True:
-            crisp = self.spectralvd.read_crisp()
+            self.spectralvd.read_crisp()
             
-            ann_current = self.spectralvd.ann_reconstruction(crisp)
+            ann_current = self.spectralvd.ann_reconstruction()
             self.ann_current_updated.emit(ann_current)
 
-            nils_current = self.spectralvd.nils_reconstruction(crisp)
+            nils_current = self.spectralvd.nils_reconstruction()
             self.nils_current_updated.emit(nils_current)
 
             sleep(0.1)
