@@ -14,12 +14,12 @@ class SpectralVD:
     def __init__(self):
         self.load_formfactors()
 
-        self.model = keras.models.load_model("models/both_model")
-        with open("models/both_scalers.pkl", "rb") as f:
+        self.model = keras.models.load_model("model")
+        with open("scalers.pkl", "rb") as f:
             self.scalers = pickle.load(f)
 
     def load_formfactors(self):
-        with open("ocelot80k.pkl", "rb") as file:
+        with open("../research/ocelot80k.pkl", "rb") as file:
             data = pickle.load(file)
         
         currents = [(sample["s"][:1000], sample["I"][:1000]) for sample in data]
