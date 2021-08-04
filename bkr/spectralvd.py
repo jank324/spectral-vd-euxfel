@@ -6,6 +6,7 @@ import pydoocs
 from scipy.constants import speed_of_light
 from tensorflow import keras
 
+from nils.crisp_live_nils import get_charge, get_real_crisp_data
 from nils.reconstruction_module import cleanup_formfactor, master_recon
 from nils.simulate_spectrometer_signal import get_crisp_signal
 
@@ -35,13 +36,10 @@ class SpectralVD:
     def read_crisp(self):
         if self.is_simulation_mode:
             self.crisp_reading = random.choice(self.crisp_data)
+            self.charge = 250e-12
         else:
-            self.crisp_reading = (      # TODO: Add actual DOOCS adresses
-                pydoocs.read("frequency_foobar")["data"],
-                np.sqrt(pydoocs.read("formfactor_foobar")["data"]),
-                pydoocs.read("formfactor_noise_foobat")["data"],
-                pydoocs.read("detlim_foobar")["data"]
-            )
+            self.crisp_reading = tuple(get_real_crisp_data(shots=10))
+            self.charge = get_charge(shots=10)
     
     def ann_reconstruction(self):
         frequency, formfactor, formfactor_noise, detlim = self.crisp_reading
@@ -61,9 +59,8 @@ class SpectralVD:
 
     def nils_reconstruction(self):
         frequency, formfactor, formfactor_noise, detlim = self.crisp_reading
-        charge = 250e-12
 
-        t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
+        t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, self.charge,
                                      method="KKstart", channels_to_remove=[], show_plots=False)
 
         s = t * speed_of_light
