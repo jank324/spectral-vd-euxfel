@@ -1,4 +1,5 @@
 import sys
+from threading import Event
 from time import sleep
 
 import matplotlib
@@ -101,9 +102,14 @@ class AcceleratorInterfaceThread(qtc.QThread):
         super().__init__()
 
         self.spectralvd = SpectralVD()
+        
+        self.running_event = Event()
+        self.running_event.clear()
 
     def run(self):
         while True:
+            self.running_event.wait()
+
             self.spectralvd.read_crisp()
             self.crisp_updated.emit(self.spectralvd.crisp_reading)
             
@@ -114,6 +120,12 @@ class AcceleratorInterfaceThread(qtc.QThread):
             self.nils_current_updated.emit(nils_current)
 
             sleep(0.1)
+    
+    def toggle_running(self):
+        if self.running_event.is_set():
+            self.running_event.clear()
+        else:
+            self.running_event.set()
 
 
 class App(qtw.QWidget):
@@ -132,10 +144,14 @@ class App(qtw.QWidget):
         self.interface_thread.ann_current_updated.connect(self.current_plot.update_ann)
         self.interface_thread.nils_current_updated.connect(self.current_plot.update_nils)
 
-        hbox = qtw.QHBoxLayout()
-        hbox.addWidget(self.formfactor_plot)
-        hbox.addWidget(self.current_plot)
-        self.setLayout(hbox)
+        self.start_stop_button = qtw.QPushButton("Start/Stop")
+        self.start_stop_button.clicked.connect(self.interface_thread.toggle_running)
+
+        grid = qtw.QGridLayout()
+        grid.addWidget(self.formfactor_plot, 0, 0, 1, 3)
+        grid.addWidget(self.current_plot, 0, 3, 1, 3)
+        grid.addWidget(self.start_stop_button, 1, 2, 1, 2)
+        self.setLayout(grid)
 
         self.interface_thread.start()
     
