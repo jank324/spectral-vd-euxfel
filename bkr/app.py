@@ -15,24 +15,56 @@ import PyQt5.QtWidgets as qtw
 from spectralvd import SpectralVD
 
 
+class FormfactorPlot(FigureCanvasQTAgg):
+
+    def __init__(self):
+        self.fig = Figure()
+        self.ax = self.fig.add_subplot(111)
+
+        super().__init__(self.fig)
+
+        self.plot_crisp, = self.ax.loglog(range(999), np.ones(999), label="CRISP", color="cyan")
+
+        self.ax.set_xlim([684283010000*1e-12, 58267340000000*1e-12])
+        self.ax.set_ylim([10e-3, 2])    # TODO: Better limits?
+        self.ax.set_xlabel("f (THz)")
+        self.ax.set_ylabel("|F|]")
+        self.ax.legend(loc="upper right")
+
+        self.fig.tight_layout()
+
+        self.setFixedSize(650, 400)
+    
+    @qtc.pyqtSlot(tuple)
+    def update_crisp(self, formfactor):
+        frequency_scaled = formfactor[0] * 1e-12
+        formfactor_scaled = formfactor[1]
+
+        self.plot_crisp.set_xdata(frequency_scaled)
+        self.plot_crisp.set_ydata(formfactor_scaled)
+
+        self.draw()
+
+
 class CurrentPlot(FigureCanvasQTAgg):
 
     def __init__(self):
         self.fig = Figure()
-        self.ax0 = self.fig.add_subplot(111)
+        self.ax = self.fig.add_subplot(111)
 
         super().__init__(self.fig)
 
-        self.plot_ann, = self.ax0.plot(range(100), np.zeros(100), label="ANN", color="green")
-        self.plot_nils, = self.ax0.plot(range(100), np.zeros(100), label="Nils", color="red")
+        limit = 0.00020095917745111108 * 1e6
+        s = np.linspace(-limit, limit, 100)
 
-        limit = 0.00020095917745111108
+        self.plot_ann, = self.ax.plot(s, np.zeros(100), label="ANN", color="green")
+        self.plot_nils, = self.ax.plot(s, np.zeros(100), label="Nils", color="red")
         
-        self.ax0.set_xlim([-limit, limit])
-        self.ax0.set_ylim([0, 10])
-        self.ax0.set_xlabel("s (μm)")
-        self.ax0.set_ylabel("Current (kA)")
-        self.ax0.legend()
+        self.ax.set_xlim([-limit, limit])
+        self.ax.set_ylim([0, 10])
+        self.ax.set_xlabel("s (μm)")
+        self.ax.set_ylabel("Current (kA)")
+        self.ax.legend(loc="upper right")
 
         self.fig.tight_layout()
 
@@ -46,9 +78,6 @@ class CurrentPlot(FigureCanvasQTAgg):
         self.plot_ann.set_xdata(s_scaled)
         self.plot_ann.set_ydata(current_scaled)
 
-        self.ax0.set_xlim([s_scaled.min(), s_scaled.max()])
-        self.ax0.set_ylim([0, 10])
-
         self.draw()
     
     @qtc.pyqtSlot(tuple)
@@ -59,14 +88,12 @@ class CurrentPlot(FigureCanvasQTAgg):
         self.plot_nils.set_xdata(s_scaled)
         self.plot_nils.set_ydata(current_scaled)
 
-        # self.ax0.set_xlim([current[0].min(), current[0].max()])
-        # self.ax0.set_ylim([0, max(1, current[1].max())])
-
         self.draw()
 
 
 class AcceleratorInterfaceThread(qtc.QThread):
     
+    crisp_updated = qtc.pyqtSignal(tuple)
     ann_current_updated = qtc.pyqtSignal(tuple)
     nils_current_updated = qtc.pyqtSignal(tuple)
 
@@ -78,6 +105,7 @@ class AcceleratorInterfaceThread(qtc.QThread):
     def run(self):
         while True:
             self.spectralvd.read_crisp()
+            self.crisp_updated.emit(self.spectralvd.crisp_reading)
             
             ann_current = self.spectralvd.ann_reconstruction()
             self.ann_current_updated.emit(ann_current)
@@ -86,9 +114,6 @@ class AcceleratorInterfaceThread(qtc.QThread):
             self.nils_current_updated.emit(nils_current)
 
             sleep(0.1)
-    
-    def change_grating(self, grating):
-        print(f"Changing grating to {grating}")
 
 
 class App(qtw.QWidget):
@@ -98,23 +123,18 @@ class App(qtw.QWidget):
 
         self.setWindowTitle("Spectral Virtual Diagnostics at European XFEL")
 
+        self.formfactor_plot = FormfactorPlot()
+
         self.current_plot = CurrentPlot()
 
         self.interface_thread = AcceleratorInterfaceThread()
+        self.interface_thread.crisp_updated.connect(self.formfactor_plot.update_crisp)
         self.interface_thread.ann_current_updated.connect(self.current_plot.update_ann)
         self.interface_thread.nils_current_updated.connect(self.current_plot.update_nils)
 
-        self.grating_dropdown = qtw.QComboBox()
-        self.grating_dropdown.addItems(["low", "high", "both"])
-        self.grating_dropdown.currentTextChanged.connect(self.interface_thread.change_grating)
-
         hbox = qtw.QHBoxLayout()
+        hbox.addWidget(self.formfactor_plot)
         hbox.addWidget(self.current_plot)
-        vbox = qtw.QVBoxLayout()
-        vbox.addWidget(qtw.QLabel("Set Grating"))
-        vbox.addWidget(self.grating_dropdown)
-        vbox.addStretch()
-        hbox.addLayout(vbox)
         self.setLayout(hbox)
 
         self.interface_thread.start()

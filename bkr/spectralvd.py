@@ -30,11 +30,11 @@ class SpectralVD:
         filtered = [(s, current) for s, current in currents if current.max() > 1000]
 
         samples = random.choices(filtered, k=10)
-        self.crisp_both = [get_crisp_signal(s, current, n_shots=10, which_set="both") for s, current in samples]
+        self.crisp_data = [tuple(get_crisp_signal(s, current, n_shots=10, which_set="both")) for s, current in samples]
     
     def read_crisp(self):
         if self.is_simulation_mode:
-            self.crisp_reading = random.choice(self.crisp_both)
+            self.crisp_reading = random.choice(self.crisp_data)
         else:
             self.crisp_reading = (      # TODO: Add actual DOOCS adresses
                 pydoocs.read("frequency_foobar")["data"],
