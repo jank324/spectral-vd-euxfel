@@ -34,7 +34,7 @@ def get_real_crisp_data(shots = 20, which_set = 'both'):
             time.sleep(0.1-dt)
     
     #get detection limit calculated by sigma of 10? rf pulses
-    det_lim =  pydoocs.read(crisp_adress + 'FORMFACTOR_DETECTLIMIT.XY')['data'][:,1]
+    det_lim =  pydoocs.read(crisp_adress + 'FORMFACTOR_MEAN_DETECTLIMIT.XY')['data'][:,1]
     
     """
     Average and noise and make comparable to simulated data
