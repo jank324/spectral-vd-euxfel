@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 from simulate_spectrometer_signal import *
-from reconstruction_module_final import *
+from nils.reconstruction_module_final import *
 
 
 plt.close('all')

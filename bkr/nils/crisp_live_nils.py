@@ -10,7 +10,7 @@ import pydoocs
 import time
 import numpy as np
 import matplotlib.pylab as plt
-from reconstruction_module import master_recon
+from nils.reconstruction_module import master_recon
 
 plt.close('all')
 
@@ -80,7 +80,8 @@ def get_charge(shots = 20):
     return charge
 
 
-frequency, formfactor, formfactor_noise, detlim = get_real_crisp_data(20, 'high')
-charge = get_charge()
-t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
-                             method="KKstart", channels_to_remove=[], show_plots=True)
+if __name__ == "__main__":
+    frequency, formfactor, formfactor_noise, detlim = get_real_crisp_data(20, 'high')
+    charge = get_charge()
+    t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
+                                 method="KKstart", channels_to_remove=[], show_plots=True)
