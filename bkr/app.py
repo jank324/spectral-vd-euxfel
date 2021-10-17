@@ -1,95 +1,73 @@
 import sys
 from threading import Event
-from time import sleep
 
-import matplotlib
-matplotlib.use("Qt5Agg")
-import matplotlib.pyplot as plt
-plt.style.use("dark_background")
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from matplotlib.figure import Figure
 import numpy as np
 import PyQt5.QtCore as qtc
 import PyQt5.QtGui as qtg
 import PyQt5.QtWidgets as qtw
+import pyqtgraph as pg
 
 from spectralvd import SpectralVD
 
 
-class FormfactorPlot(FigureCanvasQTAgg):
+class FormfactorPlot(pg.PlotWidget):
 
-    def __init__(self):
-        self.fig = Figure()
-        self.ax = self.fig.add_subplot(111)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        super().__init__(self.fig)
-
-        self.plot_crisp, = self.ax.loglog(range(999), np.ones(999), label="CRISP", color="cyan")
-
-        self.ax.set_xlim([684283010000*1e-12, 58267340000000*1e-12])
-        self.ax.set_ylim([10e-3, 2])    # TODO: Better limits?
-        self.ax.set_xlabel("f (THz)")
-        self.ax.set_ylabel("|F|]")
-        self.ax.legend(loc="upper right")
-
-        self.fig.tight_layout()
-
-        self.setFixedSize(650, 400)
+        pen = pg.mkPen("c", width=2)
+        self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen, name="CRISP")
+        # self.setXRange(int(684283010000), int(58267340000000))
+        # self.setYRange(10e-3, 2)
+        # self.setLogMode(x=True, y=True)
+        self.setLabel("bottom", text="Frequency", units="Hz")
+        self.setLabel("left", text="|Frequency|")
+        self.addLegend()
+        self.showGrid(x=True, y=True)
     
     @qtc.pyqtSlot(tuple)
     def update_crisp(self, formfactor):
-        frequency_scaled = formfactor[0] * 1e-12
-        formfactor_scaled = formfactor[1]
+        frequency_scaled = np.log10(formfactor[0])
+        formfactor_scaled = formfactor[1].copy()
+        formfactor_scaled[formfactor_scaled < 0] = 0
+        formfactor_scaled = np.log10(formfactor_scaled + 1)
 
-        self.plot_crisp.set_xdata(frequency_scaled)
-        self.plot_crisp.set_ydata(formfactor_scaled)
-
-        self.draw()
+        self.plot_crisp.setData(frequency_scaled, formfactor_scaled)
 
 
-class CurrentPlot(FigureCanvasQTAgg):
+class CurrentPlot(pg.PlotWidget):
 
-    def __init__(self):
-        self.fig = Figure()
-        self.ax = self.fig.add_subplot(111)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        super().__init__(self.fig)
-
-        limit = 0.00020095917745111108 * 1e6
+        limit = 0.00020095917745111108 # * 1e6
         s = np.linspace(-limit, limit, 100)
 
-        self.plot_ann, = self.ax.plot(s, np.zeros(100), label="ANN", color="green")
-        self.plot_nils, = self.ax.plot(s, np.zeros(100), label="Nils", color="red")
-        
-        self.ax.set_xlim([-limit, limit])
-        self.ax.set_ylim([0, 10])
-        self.ax.set_xlabel("s (μm)")
-        self.ax.set_ylabel("Current (kA)")
-        self.ax.legend(loc="upper right")
+        ann_pen = pg.mkPen("g", width=2)
+        nils_pen = pg.mkPen("r", width=2)
+        self.ann_plot = self.plot(s, np.zeros(100), pen=ann_pen, name="ANN")
+        self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
 
-        self.fig.tight_layout()
-
-        self.setFixedSize(650, 400)
+        self.setXRange(-limit, limit)
+        self.setYRange(0, 10e3)
+        self.setLabel("bottom", text="s", units="m")
+        self.setLabel("left", text="Current", units="A")
+        self.addLegend()
+        self.showGrid(x=True, y=True)
     
     @qtc.pyqtSlot(tuple)
     def update_ann(self, current):
-        s_scaled = current[0] * 1e6
-        current_scaled = current[1] * 1e-3
+        s_scaled = current[0] # * 1e6
+        current_scaled = current[1] # * 1e-3
 
-        self.plot_ann.set_xdata(s_scaled)
-        self.plot_ann.set_ydata(current_scaled)
-
-        self.draw()
+        self.ann_plot.setData(s_scaled, current_scaled)
     
     @qtc.pyqtSlot(tuple)
     def update_nils(self, current):
-        s_scaled = current[0] * 1e6
-        current_scaled = current[1] * 1e-3
+        s_scaled = current[0] # * 1e6
+        current_scaled = current[1] # * 1e-3
 
-        self.plot_nils.set_xdata(s_scaled)
-        self.plot_nils.set_ydata(current_scaled)
-
-        self.draw()
+        self.nils_plot.setData(s_scaled, current_scaled)
 
 
 class AcceleratorInterfaceThread(qtc.QThread):
@@ -111,16 +89,13 @@ class AcceleratorInterfaceThread(qtc.QThread):
             self.running_event.wait()
 
             self.spectralvd.read_crisp()
-            self.crisp_updated.emit(self.spectralvd.crisp_reading)
-            
             ann_current = self.spectralvd.ann_reconstruction()
-            self.ann_current_updated.emit(ann_current)
-
             nils_current = self.spectralvd.nils_reconstruction()
-            self.nils_current_updated.emit(nils_current)
 
-            sleep(0.1)
-    
+            self.crisp_updated.emit(self.spectralvd.crisp_reading)
+            self.ann_current_updated.emit(ann_current)
+            self.nils_current_updated.emit(nils_current)
+        
     def toggle_running(self):
         if self.running_event.is_set():
             self.running_event.clear()
