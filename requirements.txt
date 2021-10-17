@@ -1,6 +1,6 @@
-matplotlib
 numpy
 pydoocs
 pyqt5
+pyqtgraph
 scipy
 tensorflow

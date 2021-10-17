@@ -11,5 +11,4 @@ __pycache__
 *.mat
 *.txt
 
-!bkr/requirements.txt
-!bkr/scalers.pkl
+!requirements.txt
