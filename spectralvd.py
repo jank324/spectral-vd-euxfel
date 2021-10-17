@@ -3,7 +3,7 @@ import pickle
 import random
 
 import numpy as np
-import pydoocs
+# import pydoocs
 from scipy.constants import speed_of_light
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
