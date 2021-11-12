@@ -15,7 +15,7 @@ from nils.simulate_spectrometer_signal import get_crisp_signal
 
 class SpectralVD:
 
-    is_simulation_mode = True   # Set true to run from fake fomrfactors rather than PyDoocs
+    is_simulation_mode = True   # Set true to run from fake formfactors rather than PyDoocs
 
     def __init__(self):
         self.model = keras.models.load_model("model")
@@ -30,7 +30,7 @@ class SpectralVD:
             self.load_formfactors()
 
     def load_formfactors(self):
-        with open("../research/ocelot80k.pkl", "rb") as file:
+        with open("ocelot80k.pkl", "rb") as file:
             data = pickle.load(file)
         
         currents = [(sample["s"][:1000], sample["I"][:1000]) for sample in data]
