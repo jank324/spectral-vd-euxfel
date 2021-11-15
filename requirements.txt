@@ -2,5 +2,6 @@ numpy
 pydoocs
 pyqt5
 pyqtgraph
+scikit-learn==1.0
 scipy
-tensorflow
+tensorflow==2.6.0

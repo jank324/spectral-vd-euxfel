@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import pickle
 import sys
 from threading import Event
 
@@ -290,7 +291,7 @@ class NilsThread(ReconstructionThread):
         charge = self._charge
 
         t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
-                                    method="KKstart", channels_to_remove=[], show_plots=False)
+                                     method="KKstart", channels_to_remove=[], show_plots=False)
 
         s = t * constants.speed_of_light
 
@@ -302,13 +303,12 @@ class ANNThread(ReconstructionThread):
     def __init__(self):
         super().__init__()
 
-        self.model = keras.models.load_model("model")
+        self._both_model = keras.models.load_model("models/both_model")
 
-        with open("scalers.json", "r") as f:
-            scaler_params = json.load(f)
-        self._X_scaler = MinMaxScaler()
-        self._X_scaler.fit([scaler_params["X_min"],scaler_params["X_max"]])
-        self._y_scaler = scaler_params["y_scaler"]
+        with open("models/both_scalers.pkl", "rb") as f:
+            scalers = pickle.load(f)
+        self._X_scaler = scalers["X"]
+        self._y_scaler = scalers["y"]
     
     def reconstruct(self):
         frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
@@ -319,7 +319,7 @@ class ANNThread(ReconstructionThread):
 
         X = clean_formfactor.reshape([1,-1])
         X_scaled = self._X_scaler.transform(X)
-        y_scaled = self.model.predict(X_scaled)
+        y_scaled = self._both_model.predict(X_scaled)
         y = y_scaled / self._y_scaler
         current = y.squeeze()
 
