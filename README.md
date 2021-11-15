@@ -2,21 +2,48 @@
 
 Virtual Diagnostics for inferring current profiles of bunches at European XFEL
 
-## Organisation of the Repository
+## How to Run the App in BKR
 
-The app to run in BKR and everything needed to actually run in in BKR and on the accelerator should be in the `bkr` directory. The `research` directory contains everything else used to develop the app. The latter may be messy.
+There are two ways to run the app in BKR. You can either run it remotely via one of the `xfeluser` servers or locally on either a macOS or Linux console. The first option is probably quicker to get up and running, whereas the latter probably runs more smoothly.
 
-In the `bkr` directory you will find a file `spectralvd.py`. This contains all the logic to talk to the accelerator and run the current inference. The file `app.py` constructs the PyQt5 UI and connects it to the logic in `spectralvd.py`. The `app.py` is also the entry point to the application. The `model` directory contains a trained model for current inference. The model requires scaling of its inputs and outputs. The required scalers are saved in `scalers.pkl`.
+### Via `xfeluser` Server
 
-## Run in BKR
-
-To run the application in BKR, you need to change into the `bkr` directory and run `app.py` as follows:
+To run remotely simply connect to one of the `xfeluser` servers
 
 ```bash
-cd bkr
-python3 app.py
+ssh username@xfeluser2
 ```
 
-As it stands, the app runs in simulation mode, meaning it is fed random simulated CRISP formfactors. In order to actually read data from DOOCS, find `spectralvd.py` and change the variable `is_simulation_mode` in line 16 to `False`.
+activate my Anaconda environment
 
-You may be missing Python packages. A `requirements.txt` can be found in the `bkr` directory.
+```bash
+conda activate /home/kaiserja/.conda/envs/spectral-vd
+```
+
+and start the app
+
+```bash
+python /home/kaiserja/spectral-vd-euxfel/app.py
+```
+
+### Locally on Console
+
+If you are running on a local Linux console you may be able to activate the environment and run the app as you would on the `xfeluser` servers (see above). On a macOS console you will have to create a suitable Anaconda environment. You can create an Anaconda environment on Linux as well, if you wisch to do so.
+
+In order to create a new Anaconda environment that is configured correctly, run the following commands in order:
+
+```bash
+git clone https://github.com/jank324/spectral-vd-euxfel.git
+cd spectral-vd-euxfel
+conda create --name spectral-vd python=3.7
+conda activate spectral-vd
+pip install requirements.txt
+```
+
+Then run
+
+```bash
+python app.py
+```
+
+to run the app.

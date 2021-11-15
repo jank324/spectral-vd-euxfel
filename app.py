@@ -3,7 +3,6 @@ import pickle
 import sys
 from threading import Event
 
-import json
 import numpy as np
 import pydoocs
 import PyQt5.QtCore as qtc
