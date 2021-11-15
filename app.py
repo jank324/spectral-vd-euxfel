@@ -266,8 +266,12 @@ class ReconstructionThread(qtc.QThread):
         self._new_crisp_reading_event = Event()
         self._new_crisp_reading_event.clear()
 
+        self._active_event = Event()
+        self._active_event.set()
+
     def run(self):
         while True:
+            self._active_event.wait()
             self._new_crisp_reading_event.wait()
             s, current = self.reconstruct()
             self._new_crisp_reading_event.clear()
@@ -279,6 +283,12 @@ class ReconstructionThread(qtc.QThread):
         self._charge = charge
 
         self._new_crisp_reading_event.set()
+    
+    def set_active(self, active_state):
+        if active_state:
+            self._active_event.set()
+        else:
+            self._active_event.clear()
     
     def reconstruct(self):
         raise NotImplementedError
@@ -376,24 +386,55 @@ class CurrentPlot(pg.PlotWidget):
         self.setLabel("left", text="Current", units="A")
         self.addLegend()
         self.showGrid(x=True, y=True)
+
+        self._nils_hidden = False
+        self._ann_both_hidden = False
+        self._ann_low_hidden = False
     
     def update_ann_both(self, s, current):
-        s_scaled = s                # * 1e6
-        current_scaled = current    # * 1e-3
+        self.ann_both_s_scaled = s                # * 1e6
+        self.ann_both_current_scaled = current    # * 1e-3
 
-        self.ann_both_plot.setData(s_scaled, current_scaled)
+        if not self._ann_both_hidden:
+            self.ann_both_plot.setData(self.ann_both_s_scaled, self.ann_both_current_scaled)
+    
+    def hide_ann_both(self, show):
+        self._ann_both_hidden = not show
+        if show:
+            self.ann_both_plot.setData(self.ann_both_s_scaled, self.ann_both_current_scaled)
+        else:
+            # self.ann_both_plot.clear()
+            self.ann_both_plot.setData([], [])
 
     def update_ann_low(self, s, current):
-        s_scaled = s                # * 1e6
-        current_scaled = current    # * 1e-3
+        self.ann_low_s_scaled = s                # * 1e6
+        self.ann_low_current_scaled = current    # * 1e-3
 
-        self.ann_low_plot.setData(s_scaled, current_scaled)
+        if not self._ann_low_hidden:
+            self.ann_low_plot.setData(self.ann_low_s_scaled, self.ann_low_current_scaled)
+    
+    def hide_ann_low(self, show):
+        self._ann_low_hidden = not show
+        if show:
+            self.ann_low_plot.setData(self.ann_low_s_scaled, self.ann_low_current_scaled)
+        else:
+            # self.ann_low_plot.clear()
+            self.ann_low_plot.setData([], [])
     
     def update_nils(self, s, current):
-        s_scaled = s                # * 1e6
-        current_scaled = current    # * 1e-3
+        self.nils_s_scaled = s                # * 1e6
+        self.nils_current_scaled = current    # * 1e-3
 
-        self.nils_plot.setData(s_scaled, current_scaled)
+        if not self._nils_hidden:
+            self.nils_plot.setData(self.nils_s_scaled, self.nils_current_scaled)
+    
+    def hide_nils(self, show):
+        self._nils_hidden = not show
+        if show:
+            self.nils_plot.setData(self.nils_s_scaled, self.nils_current_scaled)
+        else:
+            # self.nils_plot.clear()
+            self.nils_plot.setData([], [])
 
 
 class App(qtw.QWidget):
@@ -402,6 +443,13 @@ class App(qtw.QWidget):
         super().__init__()
 
         self.setWindowTitle("Spectral Virtual Diagnostics at European XFEL")
+
+        self.nils_checkbox = qtw.QCheckBox("Nils")
+        self.nils_checkbox.setChecked(True)
+        self.ann_both_checkbox = qtw.QCheckBox("ANN Both")
+        self.ann_both_checkbox.setChecked(True)
+        self.ann_low_checkbox = qtw.QCheckBox("ANN Low")
+        self.ann_low_checkbox.setChecked(True)
 
         self.formfactor_plot = FormfactorPlot()
         self.current_plot = CurrentPlot()
@@ -420,9 +468,19 @@ class App(qtw.QWidget):
         self.ann_both_thread.new_reconstruction.connect(self.current_plot.update_ann_both)
         self.ann_low_thread.new_reconstruction.connect(self.current_plot.update_ann_low)
 
+        self.nils_checkbox.stateChanged.connect(self.nils_thread.set_active)
+        self.nils_checkbox.stateChanged.connect(self.current_plot.hide_nils)
+        self.ann_both_checkbox.stateChanged.connect(self.ann_both_thread.set_active)
+        self.ann_both_checkbox.stateChanged.connect(self.current_plot.hide_ann_both)
+        self.ann_low_checkbox.stateChanged.connect(self.ann_low_thread.set_active)
+        self.ann_low_checkbox.stateChanged.connect(self.current_plot.hide_ann_low)
+
         grid = qtw.QGridLayout()
         grid.addWidget(self.formfactor_plot, 0, 0, 1, 3)
         grid.addWidget(self.current_plot, 0, 3, 1, 3)
+        grid.addWidget(self.ann_both_checkbox, 1, 3, 1, 1)
+        grid.addWidget(self.ann_low_checkbox, 1, 4, 1, 1)
+        grid.addWidget(self.nils_checkbox, 1, 5, 1, 1)
         self.setLayout(grid)
 
         self.crisp_thread.start()
