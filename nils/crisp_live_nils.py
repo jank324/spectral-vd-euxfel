@@ -6,7 +6,7 @@ Created on Wed Aug  4 14:32:53 2021
 @author: lockmann
 """
 
-# import pydoocs
+import pydoocs
 import time
 import numpy as np
 import matplotlib.pylab as plt
