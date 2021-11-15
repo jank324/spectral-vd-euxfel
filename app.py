@@ -300,12 +300,12 @@ class NilsThread(ReconstructionThread):
 
 class ANNThread(ReconstructionThread):
 
-    def __init__(self):
+    def __init__(self, model_name):
         super().__init__()
 
-        self._both_model = keras.models.load_model("models/both_model")
+        self._both_model = keras.models.load_model(f"models/{model_name}_model")
 
-        with open("models/both_scalers.pkl", "rb") as f:
+        with open(f"models/{model_name}_scalers.pkl", "rb") as f:
             scalers = pickle.load(f)
         self._X_scaler = scalers["X"]
         self._y_scaler = scalers["y"]
@@ -363,9 +363,11 @@ class CurrentPlot(pg.PlotWidget):
         limit = 0.00020095917745111108 # * 1e6
         s = np.linspace(-limit, limit, 100)
 
-        ann_pen = pg.mkPen("g", width=2)
-        nils_pen = pg.mkPen("r", width=2)
-        self.ann_plot = self.plot(s, np.zeros(100), pen=ann_pen, name="ANN")
+        ann_both_pen = pg.mkPen("r", width=2)
+        ann_low_pen = pg.mkPen("g", width=2)
+        nils_pen = pg.mkPen("b", width=2)
+        self.ann_both_plot = self.plot(s, np.zeros(100), pen=ann_both_pen, name="ANN Both")
+        self.ann_low_plot = self.plot(s, np.zeros(100), pen=ann_low_pen, name="ANN Low")
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
 
         self.setXRange(-limit, limit)
@@ -375,11 +377,17 @@ class CurrentPlot(pg.PlotWidget):
         self.addLegend()
         self.showGrid(x=True, y=True)
     
-    def update_ann(self, s, current):
+    def update_ann_both(self, s, current):
         s_scaled = s                # * 1e6
         current_scaled = current    # * 1e-3
 
-        self.ann_plot.setData(s_scaled, current_scaled)
+        self.ann_both_plot.setData(s_scaled, current_scaled)
+
+    def update_ann_low(self, s, current):
+        s_scaled = s                # * 1e6
+        current_scaled = current    # * 1e-3
+
+        self.ann_low_plot.setData(s_scaled, current_scaled)
     
     def update_nils(self, s, current):
         s_scaled = s                # * 1e6
@@ -400,14 +408,17 @@ class App(qtw.QWidget):
 
         self.crisp_thread = CRISPThread()
         self.nils_thread = NilsThread()
-        self.ann_thread = ANNThread()
+        self.ann_both_thread = ANNThread("both")
+        self.ann_low_thread = ANNThread("low")
 
         self.crisp_thread.new_reading.connect(self.formfactor_plot.update)
         self.crisp_thread.new_reading.connect(self.nils_thread.submit_reconstruction)
-        self.crisp_thread.new_reading.connect(self.ann_thread.submit_reconstruction)
+        self.crisp_thread.new_reading.connect(self.ann_both_thread.submit_reconstruction)
+        self.crisp_thread.new_reading.connect(self.ann_low_thread.submit_reconstruction)
 
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
-        self.ann_thread.new_reconstruction.connect(self.current_plot.update_ann)
+        self.ann_both_thread.new_reconstruction.connect(self.current_plot.update_ann_both)
+        self.ann_low_thread.new_reconstruction.connect(self.current_plot.update_ann_low)
 
         grid = qtw.QGridLayout()
         grid.addWidget(self.formfactor_plot, 0, 0, 1, 3)
@@ -416,7 +427,8 @@ class App(qtw.QWidget):
 
         self.crisp_thread.start()
         self.nils_thread.start()
-        self.ann_thread.start()
+        self.ann_both_thread.start()
+        self.ann_low_thread.start()
 
     def handle_application_exit(self):
         pass
