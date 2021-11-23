@@ -15,7 +15,7 @@ from nils.reconstruction_module import master_recon
 plt.close('all')
 
 
-def get_real_crisp_data(shots = 20, which_set = 'both'):
+def get_real_crisp_data(shots = 20, which_set = 'both', nbunch=0):
     # load current crisp data
     crisp_adress = 'XFEL.SDIAG/THZ_SPECTROMETER.FORMFACTOR/CRD.1934.TL/'
     
@@ -27,7 +27,7 @@ def get_real_crisp_data(shots = 20, which_set = 'both'):
     freqs = pydoocs.read(crisp_adress+ 'FORMFACTOR.XY')['data'] [:,0]
     for shot in np.arange(shots):
         t0 = time.time()
-        all_data[shot]= pydoocs.read(crisp_adress + 'FORMFACTOR.XY')['data'][:,1]
+        all_data[shot]= pydoocs.read(crisp_adress + 'FORMFACTOR.ARRAY')['data'][:,nbunch * 2]
         t1 = time.time()
         dt = t1-t0
         if dt<0.1:

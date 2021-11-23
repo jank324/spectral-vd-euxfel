@@ -21,14 +21,21 @@ from nils.simulate_spectrometer_signal import get_crisp_signal
 class CRISPThread(qtc.QThread):
 
     new_reading = qtc.pyqtSignal(str, np.ndarray, float)
-
+    nbunch = 0
+    
+    def set_nbunch(self, n):
+        self.nbunch = n
+    
     def run(self):
         with ThreadPoolExecutor() as executor:
             while True:
                 grating_future = executor.submit(CRISPThread.get_grating)
-                charge_future = executor.submit(get_charge, shots=10)
+                charge_future = executor.submit(get_charge, shots=1)
                 grating = grating_future.result()
-                reading_future = executor.submit(get_real_crisp_data, shots=10, which_set="both")
+                reading_future = executor.submit(get_real_crisp_data, 
+                                                 shots=1, 
+                                                 which_set="both", 
+                                                 nbunch=self.nbunch)
                 charge = charge_future.result()
                 reading = reading_future.result()
 
@@ -347,7 +354,7 @@ class FormfactorPlot(pg.PlotWidget):
         self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen, name="CRISP")
         # self.setXRange(int(684283010000), int(58267340000000))
         # self.setYRange(10e-3, 2)
-        # self.setLogMode(x=True, y=True)
+        self.setLogMode(x=True, y=True)
         self.setLabel("bottom", text="Frequency", units="Hz")
         self.setLabel("left", text="|Frequency|")
         self.addLegend()
@@ -356,10 +363,11 @@ class FormfactorPlot(pg.PlotWidget):
     def update(self, grating, reading, charge):
         frequency, formfactor, _, _ = reading
 
-        frequency_scaled = np.log10(frequency)
+        frequency_scaled = frequency.copy() # np.log10(frequency)
         formfactor_scaled = formfactor.copy()
-        formfactor_scaled[formfactor_scaled < 0] = 0
-        formfactor_scaled = np.log10(formfactor_scaled + 1)
+        formfactor_scaled[formfactor_scaled <= 0] = 1e-3
+        #formfactor_scaled = formfactor_scaled + 1e-12
+        #formfactor_scaled = np.log10(formfactor_scaled + 1)
 
         self.plot_crisp.setData(frequency_scaled, formfactor_scaled)
 
@@ -371,10 +379,12 @@ class CurrentPlot(pg.PlotWidget):
 
         limit = 0.00020095917745111108 # * 1e6
         s = np.linspace(-limit, limit, 100)
+        
+        ann_both_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
+        
+        ann_low_pen = pg.mkPen("g", width=3)
 
-        ann_both_pen = pg.mkPen("r", width=2)
-        ann_low_pen = pg.mkPen("g", width=2)
-        nils_pen = pg.mkPen("b", width=2)
+        nils_pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
         self.ann_both_plot = self.plot(s, np.zeros(100), pen=ann_both_pen, name="ANN Both")
         self.ann_low_plot = self.plot(s, np.zeros(100), pen=ann_low_pen, name="ANN Low")
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
@@ -449,6 +459,10 @@ class App(qtw.QWidget):
         self.ann_both_checkbox.setChecked(True)
         self.ann_low_checkbox = qtw.QCheckBox("ANN Low")
         self.ann_low_checkbox.setChecked(True)
+        self.l1 = qtw.QLabel("N bunch: x2 ")
+        self.sb_nbunch = qtw.QSpinBox()
+        self.sb_nbunch.setMaximum(1024)
+        
 
         self.formfactor_plot = FormfactorPlot()
         self.current_plot = CurrentPlot()
@@ -462,7 +476,8 @@ class App(qtw.QWidget):
         self.crisp_thread.new_reading.connect(self.nils_thread.submit_reconstruction)
         self.crisp_thread.new_reading.connect(self.ann_both_thread.submit_reconstruction)
         self.crisp_thread.new_reading.connect(self.ann_low_thread.submit_reconstruction)
-
+        self.sb_nbunch.valueChanged.connect(self.crisp_thread.set_nbunch)
+        
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
         self.ann_both_thread.new_reconstruction.connect(self.current_plot.update_ann_both)
         self.ann_low_thread.new_reconstruction.connect(self.current_plot.update_ann_low)
@@ -480,6 +495,9 @@ class App(qtw.QWidget):
         grid.addWidget(self.ann_both_checkbox, 1, 3, 1, 1)
         grid.addWidget(self.ann_low_checkbox, 1, 4, 1, 1)
         grid.addWidget(self.nils_checkbox, 1, 5, 1, 1)
+        grid.addWidget(self.l1, 1, 0, 1, 1)
+        grid.addWidget(self.sb_nbunch, 1, 1, 1, 1)
+
         self.setLayout(grid)
 
         self.crisp_thread.start()
