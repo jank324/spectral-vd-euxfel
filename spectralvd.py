@@ -451,6 +451,75 @@ class ReverseRFANN(ReverseRF):
         to_pickle(self.n_rf, f"{path}/n_rf")
         to_pickle(self.history, f"{path}/history")
 
+
+class ReverseRFDisturbedANN(ReverseRF):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        self.X1_scaler = StandardScaler()
+        self.X2_scaler = MinMaxScaler()
+        self.y_scaler = StandardScaler()
+        
+        self.model = keras.Sequential([
+            layers.Dense(200, activation="relu"),
+            layers.Dense(100, activation="relu"),
+            layers.Dense(50, activation="relu"),
+            layers.Dense(self.n_rf, activation=None)]
+        )
+        self.model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    
+    def fit(self, rf_disturbed, formfactors, rf, epochs=1000, verbose=1):
+        X1 = self._preprocess_rf(rf_disturbed)
+        X2 = self._preprocess_formfactors(formfactors)
+        y = self._preprocess_rf(rf)
+        
+        X1_scaled = self.X1_scaler.fit_transform(X1)
+        X2_scaled = self.X2_scaler.fit_transform(X2)
+        y_scaled = self.y_scaler.fit_transform(y)
+        
+        X_scaled = np.concatenate([X1_scaled,X2_scaled], axis=1)
+        
+        history = self.model.fit(X_scaled, y_scaled, epochs=epochs, batch_size=64, verbose=verbose)
+        
+        self.history = history.history
+            
+    def predict(self, rf_disturbed, formfactors):
+        X1 = self._preprocess_rf(rf_disturbed)
+        X2 = self._preprocess_formfactors(formfactors)
+        
+        X1_scaled = self.X1_scaler.fit_transform(X1)
+        X2_scaled = self.X2_scaler.fit_transform(X2)
+        
+        X_scaled = np.concatenate([X1_scaled,X2_scaled], axis=1)
+        
+        y_scaled = self.model.predict(X_scaled)
+        y = self.y_scaler.inverse_transform(y_scaled)
+
+        return y
+    
+    @classmethod
+    def load(cls, path):
+        svd = cls()
+        svd.model = keras.models.load_model(f"{path}/model")
+        svd.X1_scaler = from_pickle(f"{path}/X1_scaler")
+        svd.X2_scaler = from_pickle(f"{path}/X2_scaler")
+        svd.y_scaler = from_pickle(f"{path}/y_scaler")
+        svd.n_rf = from_pickle(f"{path}/n_rf")
+        svd.history = from_pickle(f"{path}/history")
+        
+        return svd
+    
+    def save(self, path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        
+        self.model.save(f"{path}/model")
+        to_pickle(self.X1_scaler, f"{path}/X1_scaler")
+        to_pickle(self.X2_scaler, f"{path}/X2_scaler")
+        to_pickle(self.y_scaler, f"{path}/y_scaler")
+        to_pickle(self.n_rf, f"{path}/n_rf")
+        to_pickle(self.history, f"{path}/history")
+
     
 class ReverseRFKNN(ReverseRF):
     
@@ -483,4 +552,22 @@ class ReverseRFKNN(ReverseRF):
         
         to_pickle(self.model, f"{path}/model")
         to_pickle(self.n_rf, f"{path}/n_rf")
+
+
+class ReverseRFDisturbedKNN(ReverseRFKNN):
+    
+    def fit(self, rf_disturbed, formfactors, rf):
+        X1 = self._preprocess_rf(rf_disturbed)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        y = self._preprocess_rf(rf)
+        
+        self.history = self.model.fit(X, y)
+    
+    def predict(self, rf_disturbed, formfactors):
+        X1 = self._preprocess_rf(rf_disturbed)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        y = self.model.predict(X)
+        return y
     
