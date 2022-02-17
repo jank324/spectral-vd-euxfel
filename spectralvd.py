@@ -2,11 +2,12 @@ from pathlib import Path
 import pickle
 
 import numpy as np
-from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow import keras
 from tensorflow.keras import layers
+
+from nils.reconstruction_module import cleanup_formfactor, master_recon
 
 
 def from_pickle(path):
@@ -660,3 +661,49 @@ class ReverseRFDeltaDisturbedKNN(ReverseRFKNN):
         correct_rf = X1 - y
 
         return correct_rf
+
+
+class LockmANN(AdaptiveANNTHz):
+
+    def predict(self, formfactors):
+        clean = []
+        for frequency, formfactor, formfactor_noise, detlim, _ in formfactors:
+            clean.append(cleanup_formfactor(frequency, formfactor, formfactor_noise, detlim, channels_to_remove=[])[:2])
+        ann_currents = super().predict(clean)
+
+        nils_currents = []
+        for frequencies, formfactors, formfactor_noise, detlim, charge in formfactors:
+            recon_time, recon_current, _ = master_recon(frequencies, formfactors, formfactor_noise,
+                                                        detlim, charge=charge, method="KKstart",
+                                                        channels_to_remove=[], show_plots=False)
+            centered = self.center_current((recon_time*3e8, recon_current))
+            nils_currents.append(centered)
+        
+        finals = []
+        for ann, nils in zip(ann_currents, nils_currents):
+            flipped = (nils[0], np.flip(nils[1]))
+
+            mae = self.compute_mae(ann, nils)
+            mae_flipped = self.compute_mae(ann, flipped)
+
+            finals.append(flipped if mae_flipped < mae else nils)
+        
+        return np.array(finals)
+
+    def compute_mae(self, a, b):
+        n = 0
+        left = min(a[0].min(), b[0].min())
+        right = max(a[0].max(), b[0].max())
+        
+        new_s = np.linspace(left, right, 100)
+        ti = np.interp(new_s, a[0], a[1], left=0, right=0)
+        pi = np.interp(new_s, b[0], b[1], left=0, right=0)
+
+        mae = np.abs(ti - pi).mean()
+        return mae
+    
+    def center_current(self, current):
+        left, right = find_edges(current[0], current[1])
+        resampled = resample(current[0], current[1], left, right, self.n_samples)
+        centered = center_on_zero(resampled[0], resampled[1], left, right)
+        return centered
