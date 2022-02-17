@@ -1,7 +1,7 @@
 numpy
-pydoocs
 pyqt5
 pyqtgraph
 scikit-learn==1.0
 scipy
 tensorflow==2.7.0
+matplotlib
