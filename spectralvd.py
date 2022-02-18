@@ -707,3 +707,193 @@ class LockmANN(AdaptiveANNTHz):
         resampled = resample(current[0], current[1], left, right, self.n_samples)
         centered = center_on_zero(resampled[0], resampled[1], left, right)
         return centered
+
+
+class Peak:
+    
+    def _preprocess_rf(self, rf):
+        X = np.stack(rf)
+        return X
+        
+    def _preprocess_formfactors(self, formfactors):
+        X = np.stack([formfactor for _, formfactor in formfactors])
+        return X
+    
+    def _preprocess_peaks(self, peaks):
+        return np.array(peaks).reshape((-1, 1))
+    
+    
+class PeakANN(Peak):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+                
+        self.X_scaler = MinMaxScaler()
+        self.y_scaler = MinMaxScaler()
+        
+        self.model = keras.Sequential([
+            layers.Dense(200, activation="relu"),
+            layers.Dense(100, activation="relu"),
+            layers.Dense(50, activation="relu"),
+            layers.Dense(1, activation="relu")]
+        )
+        self.model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    
+    @classmethod
+    def load(cls, path):
+        svd = cls()
+        svd.model = keras.models.load_model(f"{path}/model")
+        svd.X_scaler = from_pickle(f"{path}/X_scaler")
+        svd.y_scaler = from_pickle(f"{path}/y_scaler")
+        svd.history = from_pickle(f"{path}/history")
+        
+        return svd
+    
+    def save(self, path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        
+        self.model.save(f"{path}/model")
+        to_pickle(self.X_scaler, f"{path}/X_scaler")
+        to_pickle(self.y_scaler, f"{path}/y_scaler")
+        to_pickle(self.history, f"{path}/history")
+
+
+class PeakANNRF(PeakANN):
+    
+    def fit(self, rf, peaks, epochs=1000, verbose=1):
+        X = self._preprocess_rf(rf)
+        y = self._preprocess_peaks(peaks)
+        
+        X_scaled = self.X_scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y)
+        
+        history = self.model.fit(X_scaled, y_scaled, epochs=epochs, batch_size=64, verbose=verbose)
+
+        self.history = history.history
+    
+    def predict(self, rf):
+        X = self._preprocess_rf(rf)
+        X_scaled = self.X_scaler.transform(X)
+        
+        y_scaled = self.model.predict(X_scaled)
+        y = self.y_scaler.inverse_transform(y_scaled)
+
+        return y
+
+
+class PeakANNTHz(PeakANN):
+    
+    def fit(self, formfactors, peaks, epochs=1000, verbose=1):
+        X = self._preprocess_formfactors(formfactors)
+        y = self._preprocess_peaks(peaks)
+        
+        X_scaled = self.X_scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y)
+        
+        history = self.model.fit(X_scaled, y_scaled, epochs=epochs, batch_size=64, verbose=verbose)
+
+        self.history = history.history
+            
+    def predict(self, formfactors):
+        X = self._preprocess_formfactors(formfactors)
+        X_scaled = self.X_scaler.transform(X)
+        
+        y_scaled = self.model.predict(X_scaled)
+        y = self.y_scaler.inverse_transform(y_scaled)
+
+        return y
+    
+
+class PeakANNRFTHz(PeakANN):
+    
+    def fit(self, rf, formfactors, peaks, epochs=1000, verbose=1):
+        X1 = self._preprocess_rf(rf)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        y = self._preprocess_peaks(peaks)
+        
+        X_scaled = self.X_scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y)
+        
+        history = self.model.fit(X_scaled, y_scaled, epochs=epochs, batch_size=64, verbose=verbose)
+
+        self.history = history.history
+            
+    def predict(self, rf, formfactors):
+        X1 = self._preprocess_rf(rf)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        X_scaled = self.X_scaler.transform(X)
+        
+        y_scaled = self.model.predict(X_scaled)
+        y = self.y_scaler.inverse_transform(y_scaled)
+
+        return y
+
+
+class PeakKNN(Peak):
+    
+    def __init__(self, n_neighbors=2, weights="distance", **kwargs):
+        super().__init__(**kwargs)
+        
+        self.model = KNeighborsRegressor(n_neighbors=n_neighbors, weights=weights)
+    
+    @classmethod
+    def load(cls, path):
+        svd = cls()
+        svd.model = from_pickle(f"{path}/model")
+        
+        return svd
+    
+    def save(self, path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        
+        to_pickle(self.model, f"{path}/model")
+    
+
+class PeakKNNRF(PeakKNN):
+    
+    def fit(self, rf, peaks):
+        X = self._preprocess_rf(rf)
+        y = self._preprocess_peaks(peaks)
+        
+        self.model.fit(X, y)
+    
+    def predict(self, rf):
+        X = self._preprocess_rf(rf)
+        y = self.model.predict(X)
+        return y
+
+
+class PeakKNNTHz(PeakKNN):
+    
+    def fit(self, formfactors, peaks):
+        X = self._preprocess_formfactors(formfactors)
+        y = self._preprocess_peaks(peaks)
+        
+        self.model.fit(X, y)
+    
+    def predict(self, formfactors):
+        X = self._preprocess_formfactors(formfactors)
+        y = self.model.predict(X)
+        return y
+
+
+class PeakKNNRFTHz(PeakKNN):
+    
+    def fit(self, rf, formfactors, peaks):
+        X1 = self._preprocess_rf(rf)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        y = self._preprocess_peaks(peaks)
+        
+        self.model.fit(X, y)
+    
+    def predict(self, rf, formfactors):
+        X1 = self._preprocess_rf(rf)
+        X2 = self._preprocess_formfactors(formfactors)
+        X = np.concatenate([X1,X2], axis=1)
+        
+        y = self.model.predict(X)
+        
+        return y
