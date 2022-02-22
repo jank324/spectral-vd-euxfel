@@ -10,12 +10,12 @@ import PyQt5.QtGui as qtg
 import PyQt5.QtWidgets as qtw
 import pyqtgraph as pg
 from scipy import constants
-from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
 
 from nils.crisp_live_nils import get_charge, get_real_crisp_data
 from nils.reconstruction_module import cleanup_formfactor, master_recon
 from nils.simulate_spectrometer_signal import get_crisp_signal
+import spectralvd
 
 
 class CRISPThread(qtc.QThread):
@@ -319,28 +319,19 @@ class ANNThread(ReconstructionThread):
     def __init__(self, model_name):
         super().__init__()
 
-        self._both_model = keras.models.load_model(f"models/{model_name}_model")
-
-        with open(f"models/{model_name}_scalers.pkl", "rb") as f:
-            scalers = pickle.load(f)
-        self._X_scaler = scalers["X"]
-        self._y_scaler = scalers["y"]
+        self.model = spectralvd.AdaptiveANNTHz.load("models/annthz")
     
     def reconstruct(self):
         frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
-        grating = self._grating
 
-        _, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor, formfactor_noise, detlim,
-                                                    channels_to_remove=[])
+        clean_frequency, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor,
+                                                                  formfactor_noise, detlim,
+                                                                  channels_to_remove=[])
 
-        X = clean_formfactor.reshape([1,-1])
-        X_scaled = self._X_scaler.transform(X)
-        y_scaled = self._both_model.predict(X_scaled)
-        y = y_scaled / self._y_scaler
-        current = y.squeeze()
+        prediction = self.model.predict([(clean_frequency, clean_formfactor)]*2)
 
-        limit = 0.00020095917745111108
-        s = np.linspace(-limit, limit, 100)
+        s = prediction[0][0]
+        current = prediction[0][1]
 
         return s, current
 
