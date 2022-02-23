@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
-import pickle
 import sys
 from threading import Event
+import time
 
 import numpy as np
 import pydoocs
@@ -11,39 +11,46 @@ import PyQt5.QtWidgets as qtw
 import pyqtgraph as pg
 from scipy import constants
 
-from nils.crisp_live_nils import get_charge, get_real_crisp_data
-from nils.reconstruction_module import cleanup_formfactor, master_recon
-from nils.simulate_spectrometer_signal import get_crisp_signal
+import nils.crisp_live_nils as cl
+import nils.reconstruction_module as rm
 import spectralvd
 
 
-class CRISPThread(qtc.QThread):
+class ReadThread(qtc.QThread):
 
-    new_reading = qtc.pyqtSignal(str, np.ndarray, float)
-    nbunch = 0
-    
-    def set_nbunch(self, n):
-        self.nbunch = n
-    
+    new_reading = qtc.pyqtSignal(np.ndarray, float)
+
+    def __init__(self):
+        super().__init__()
+
+        self.nbunch = 0
+        self.t_last = time.time()
+
     def run(self):
         with ThreadPoolExecutor() as executor:
             while True:
-                grating_future = executor.submit(CRISPThread.get_grating)
-                charge_future = executor.submit(get_charge, shots=1)
-                grating = grating_future.result()
-                reading_future = executor.submit(get_real_crisp_data, 
+                t_passed = time.time() - self.t_last
+                t_remaining = 0.1 - t_passed
+                if t_remaining > 0:
+                    time.sleep(t_remaining)
+                t_now = time.time()
+                dt = t_now - self.t_last
+                self.t_last = t_now
+                # print(f"Read thread running at {1/dt:.2f} Hz")
+
+                charge_future = executor.submit(cl.get_charge, shots=1)
+                reading_future = executor.submit(cl.get_real_crisp_data, 
                                                  shots=1, 
                                                  which_set="both", 
                                                  nbunch=self.nbunch)
+                
                 charge = charge_future.result()
                 reading = reading_future.result()
 
-                self.new_reading.emit(grating, reading, charge)
+                self.new_reading.emit(reading, charge)
     
-    def get_grating():
-        response = pydoocs.read("XFEL.SDIAG/THZ_SPECTROMETER.GRATINGMOVER/CRD.1934.TL/STATUS.STR")
-        grating_raw = response["data"]
-        return grating_raw[:-5].lower()
+    def set_nbunch(self, nbunch):
+        self.nbunch = nbunch
 
 
 class ReconstructionThread(qtc.QThread):
@@ -62,12 +69,13 @@ class ReconstructionThread(qtc.QThread):
         while True:
             self._active_event.wait()
             self._new_crisp_reading_event.wait()
-            s, current = self.reconstruct()
-            self._new_crisp_reading_event.clear()
-            self.new_reconstruction.emit(s, current)
 
-    def submit_reconstruction(self, grating, crisp_reading, charge):
-        self._grating = grating
+            s, current = self.reconstruct()
+            self.new_reconstruction.emit(s, current)
+            
+            self._new_crisp_reading_event.clear()
+
+    def submit_reconstruction(self, crisp_reading, charge):
         self._crisp_reading = crisp_reading
         self._charge = charge
 
@@ -89,27 +97,27 @@ class NilsThread(ReconstructionThread):
         frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
         charge = self._charge
 
-        t, current, _ = master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
-                                     method="KKstart", channels_to_remove=[], show_plots=False)
+        t, current, _ = rm.master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
+                                        method="KKstart", channels_to_remove=[], show_plots=False)
 
         s = t * constants.speed_of_light
 
         return s, current
 
 
-class ANNThread(ReconstructionThread):
+class ANNTHzThread(ReconstructionThread):
 
-    def __init__(self, model_name):
+    def __init__(self, path):
         super().__init__()
 
-        self.model = spectralvd.AdaptiveANNTHz.load("models/annthz")
+        self.model = spectralvd.AdaptiveANNTHz.load(path)
     
     def reconstruct(self):
         frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
 
-        clean_frequency, clean_formfactor, _ = cleanup_formfactor(frequency, formfactor,
-                                                                  formfactor_noise, detlim,
-                                                                  channels_to_remove=[])
+        clean_frequency, clean_formfactor, _ = rm.cleanup_formfactor(frequency, formfactor,
+                                                                     formfactor_noise, detlim,
+                                                                     channels_to_remove=[])
 
         prediction = self.model.predict([(clean_frequency, clean_formfactor)]*2)
 
@@ -133,8 +141,15 @@ class FormfactorPlot(pg.PlotWidget):
         self.setLabel("left", text="|Frequency|")
         self.addLegend()
         self.showGrid(x=True, y=True)
+
+        self.t_last = time.time()
     
-    def update(self, grating, reading, charge):
+    def update(self, reading, charge):
+        t_now = time.time()
+        dt = t_now - self.t_last
+        self.t_last = t_now
+        # print(f"Forffactor update running at {1/dt:.2f} Hz")
+
         frequency, formfactor, _, _ = reading
 
         frequency_scaled = frequency.copy() # np.log10(frequency)
@@ -154,13 +169,10 @@ class CurrentPlot(pg.PlotWidget):
         limit = 0.00020095917745111108 # * 1e6
         s = np.linspace(-limit, limit, 100)
         
-        ann_both_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
+        annthz_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
         
-        ann_low_pen = pg.mkPen("g", width=3)
-
         nils_pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
-        self.ann_both_plot = self.plot(s, np.zeros(100), pen=ann_both_pen, name="ANN Both")
-        self.ann_low_plot = self.plot(s, np.zeros(100), pen=ann_low_pen, name="ANN Low")
+        self.annthz_plot = self.plot(s, np.zeros(100), pen=annthz_pen, name="ANN THz")
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
 
         self.setXRange(-limit, limit)
@@ -171,38 +183,29 @@ class CurrentPlot(pg.PlotWidget):
         self.showGrid(x=True, y=True)
 
         self._nils_hidden = False
-        self._ann_both_hidden = False
-        self._ann_low_hidden = False
-    
-    def update_ann_both(self, s, current):
-        self.ann_both_s_scaled = s                # * 1e6
-        self.ann_both_current_scaled = current    # * 1e-3
+        self._annthz_hidden = False
 
-        if not self._ann_both_hidden:
-            self.ann_both_plot.setData(self.ann_both_s_scaled, self.ann_both_current_scaled)
+        self.t_last = time.time()
     
-    def hide_ann_both(self, show):
-        self._ann_both_hidden = not show
+    def update_annthz(self, s, current):
+        t_now = time.time()
+        dt = t_now - self.t_last
+        self.t_last = t_now
+        # print(f"ANN update running at {1/dt:.2f} Hz")
+
+        self.annthz_s_scaled = s                # * 1e6
+        self.annthz_current_scaled = current    # * 1e-3
+
+        if not self._annthz_hidden:
+            self.annthz_plot.setData(self.annthz_s_scaled, self.annthz_current_scaled)
+    
+    def hide_annthz(self, show):
+        self._annthz_hidden = not show
         if show:
-            self.ann_both_plot.setData(self.ann_both_s_scaled, self.ann_both_current_scaled)
+            self.annthz_plot.setData(self.annthz_s_scaled, self.annthz_current_scaled)
         else:
-            # self.ann_both_plot.clear()
-            self.ann_both_plot.setData([], [])
-
-    def update_ann_low(self, s, current):
-        self.ann_low_s_scaled = s                # * 1e6
-        self.ann_low_current_scaled = current    # * 1e-3
-
-        if not self._ann_low_hidden:
-            self.ann_low_plot.setData(self.ann_low_s_scaled, self.ann_low_current_scaled)
-    
-    def hide_ann_low(self, show):
-        self._ann_low_hidden = not show
-        if show:
-            self.ann_low_plot.setData(self.ann_low_s_scaled, self.ann_low_current_scaled)
-        else:
-            # self.ann_low_plot.clear()
-            self.ann_low_plot.setData([], [])
+            # self.annthz_plot.clear()
+            self.annthz_plot.setData([], [])
     
     def update_nils(self, s, current):
         self.nils_s_scaled = s                # * 1e6
@@ -229,55 +232,45 @@ class App(qtw.QWidget):
 
         self.nils_checkbox = qtw.QCheckBox("Nils")
         self.nils_checkbox.setChecked(True)
-        self.ann_both_checkbox = qtw.QCheckBox("ANN Both")
-        self.ann_both_checkbox.setChecked(True)
-        self.ann_low_checkbox = qtw.QCheckBox("ANN Low")
-        self.ann_low_checkbox.setChecked(True)
+        self.annthz_checkbox = qtw.QCheckBox("ANN THz")
+        self.annthz_checkbox.setChecked(True)
         self.l1 = qtw.QLabel("N bunch: x2 ")
         self.sb_nbunch = qtw.QSpinBox()
         self.sb_nbunch.setMaximum(1024)
-        
 
         self.formfactor_plot = FormfactorPlot()
         self.current_plot = CurrentPlot()
 
-        self.crisp_thread = CRISPThread()
+        self.read_thread = ReadThread()
         self.nils_thread = NilsThread()
-        self.ann_both_thread = ANNThread("both")
-        self.ann_low_thread = ANNThread("low")
+        self.annthz_thread = ANNTHzThread("models/annthz")
 
-        self.crisp_thread.new_reading.connect(self.formfactor_plot.update)
-        self.crisp_thread.new_reading.connect(self.nils_thread.submit_reconstruction)
-        self.crisp_thread.new_reading.connect(self.ann_both_thread.submit_reconstruction)
-        self.crisp_thread.new_reading.connect(self.ann_low_thread.submit_reconstruction)
-        self.sb_nbunch.valueChanged.connect(self.crisp_thread.set_nbunch)
+        self.read_thread.new_reading.connect(self.formfactor_plot.update)
+        self.read_thread.new_reading.connect(self.nils_thread.submit_reconstruction)
+        self.read_thread.new_reading.connect(self.annthz_thread.submit_reconstruction)
         
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
-        self.ann_both_thread.new_reconstruction.connect(self.current_plot.update_ann_both)
-        self.ann_low_thread.new_reconstruction.connect(self.current_plot.update_ann_low)
+        self.annthz_thread.new_reconstruction.connect(self.current_plot.update_annthz)
 
         self.nils_checkbox.stateChanged.connect(self.nils_thread.set_active)
         self.nils_checkbox.stateChanged.connect(self.current_plot.hide_nils)
-        self.ann_both_checkbox.stateChanged.connect(self.ann_both_thread.set_active)
-        self.ann_both_checkbox.stateChanged.connect(self.current_plot.hide_ann_both)
-        self.ann_low_checkbox.stateChanged.connect(self.ann_low_thread.set_active)
-        self.ann_low_checkbox.stateChanged.connect(self.current_plot.hide_ann_low)
+        self.annthz_checkbox.stateChanged.connect(self.annthz_thread.set_active)
+        self.annthz_checkbox.stateChanged.connect(self.current_plot.hide_annthz)
+        self.sb_nbunch.valueChanged.connect(self.read_thread.set_nbunch)
 
         grid = qtw.QGridLayout()
         grid.addWidget(self.formfactor_plot, 0, 0, 1, 3)
         grid.addWidget(self.current_plot, 0, 3, 1, 3)
-        grid.addWidget(self.ann_both_checkbox, 1, 3, 1, 1)
-        grid.addWidget(self.ann_low_checkbox, 1, 4, 1, 1)
-        grid.addWidget(self.nils_checkbox, 1, 5, 1, 1)
+        grid.addWidget(self.annthz_checkbox, 1, 3, 1, 1)
+        grid.addWidget(self.nils_checkbox, 1, 4, 1, 1)
         grid.addWidget(self.l1, 1, 0, 1, 1)
         grid.addWidget(self.sb_nbunch, 1, 1, 1, 1)
 
         self.setLayout(grid)
 
-        self.crisp_thread.start()
+        self.read_thread.start()
         self.nils_thread.start()
-        self.ann_both_thread.start()
-        self.ann_low_thread.start()
+        self.annthz_thread.start()
 
     def handle_application_exit(self):
         pass
@@ -307,6 +300,7 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     window = App()
+    window.resize(1200, 600)
     window.show()
 
     app.aboutToQuit.connect(window.handle_application_exit)
