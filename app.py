@@ -133,13 +133,13 @@ class FormfactorPlot(pg.PlotWidget):
         super().__init__(*args, **kwargs)
 
         pen = pg.mkPen("c", width=2)
+        self.addLegend()
         self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen, name="CRISP")
         # self.setXRange(int(684283010000), int(58267340000000))
         # self.setYRange(10e-3, 2)
         self.setLogMode(x=True, y=True)
         self.setLabel("bottom", text="Frequency", units="Hz")
         self.setLabel("left", text="|Frequency|")
-        self.addLegend()
         self.showGrid(x=True, y=True)
 
         self.t_last = time.time()
@@ -172,14 +172,13 @@ class CurrentPlot(pg.PlotWidget):
         annthz_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
         
         nils_pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
+        self.addLegend()
         self.annthz_plot = self.plot(s, np.zeros(100), pen=annthz_pen, name="ANN THz")
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
-
         self.setXRange(-limit, limit)
         self.setYRange(0, 10e3)
         self.setLabel("bottom", text="s", units="m")
         self.setLabel("left", text="Current", units="A")
-        self.addLegend()
         self.showGrid(x=True, y=True)
 
         self._nils_hidden = False
