@@ -502,6 +502,12 @@ class App(qtw.QWidget):
         self.annrfthz_thread.start()
         self.knnthz_thread.start()
 
+        # Turn off some of the plots at app startup
+        self.lockmann_checkbox.setChecked(False)
+        self.annrf_checkbox.setChecked(False)
+        self.annrfthz_checkbox.setChecked(False)
+        self.knnthz_checkbox.setChecked(False)
+
     def handle_application_exit(self):
         pass
     
