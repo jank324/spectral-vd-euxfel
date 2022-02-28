@@ -1,3 +1,4 @@
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import sys
 from threading import Event
@@ -11,43 +12,83 @@ import PyQt5.QtWidgets as qtw
 import pyqtgraph as pg
 from scipy import constants
 
-import nils.crisp_live_nils as cl
-import nils.reconstruction_module as rm
+import nils.reconstruction_module as recon
 import spectralvd
 
 
 class ReadThread(qtc.QThread):
 
-    new_reading = qtc.pyqtSignal(np.ndarray, float)
+    new_raw_reading = qtc.pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray, float)
+    new_clean_reading = qtc.pyqtSignal(np.ndarray, np.ndarray)
 
-    def __init__(self):
+    crisp_channel = "XFEL.SDIAG/THZ_SPECTROMETER.FORMFACTOR/CRD.1934.TL/"
+
+    def __init__(self, shots=10):
         super().__init__()
 
+        self.shot_frequency = 10    # Hz
+
+        self.ffs = deque(maxlen=shots)
+        self.charges = deque(maxlen=shots)
         self.nbunch = 0
         self.t_last = time.time()
+        self.executor = ThreadPoolExecutor()
 
     def run(self):
-        with ThreadPoolExecutor() as executor:
-            while True:
-                t_passed = time.time() - self.t_last
-                t_remaining = 0.1 - t_passed
-                if t_remaining > 0:
-                    time.sleep(t_remaining)
-                t_now = time.time()
-                dt = t_now - self.t_last
-                self.t_last = t_now
-                # print(f"Read thread running at {1/dt:.2f} Hz")
+        while True:
+            self.wait_for_next_shot()
 
-                charge_future = executor.submit(cl.get_charge, shots=1)
-                reading_future = executor.submit(cl.get_real_crisp_data, 
-                                                 shots=1, 
-                                                 which_set="both", 
-                                                 nbunch=self.nbunch)
-                
-                charge = charge_future.result()
-                reading = reading_future.result()
+            freqs, ff, ff_noise, detlim, charge = self.read()
+            self.new_raw_reading.emit(freqs, ff, ff_noise, detlim, charge)
 
-                self.new_reading.emit(reading, charge)
+            freqs_clean, ff_clean, _ = recon.cleanup_formfactor(freqs, ff, ff_noise, detlim, channels_to_remove=[])
+            self.new_clean_reading.emit(freqs_clean, ff_clean)
+    
+    def wait_for_next_shot(self):
+        shot_dt = 1 / self.shot_frequency
+
+        t_passed = time.time() - self.t_last
+        t_remaining = shot_dt - t_passed
+        if t_remaining > 0:
+            time.sleep(t_remaining)
+        self.t_last = time.time()
+    
+    def read(self):
+        charge_future = self.executor.submit(self.get_charge)
+        ff_future = self.executor.submit(self.get_formfactor)
+        detlim_future = self.executor.submit(self.get_detlim)
+        
+        charge = charge_future.result()
+        freqs, ff_sq = ff_future.result()
+        detlim = detlim_future.result()
+
+        self.ffs.append(ff_sq)
+        self.charges.append(charge)
+
+        ff_sq_mean = np.array(self.ffs).mean(axis=0)
+        ff = np.sqrt(np.abs(ff_sq_mean)) * np.sign(ff_sq_mean)
+
+        ff_sq_noise = np.std(np.array(self.ffs), axis=0)
+        ff_noise = np.abs(0.5 / ff * ff_sq_noise)
+
+        detlim_mean = np.sqrt(detlim * np.sqrt(10 / len(self.ffs)))
+        
+        charge_mean = np.mean(self.charges)
+
+        return freqs, ff, ff_noise, detlim_mean, charge_mean
+
+    def get_charge(self):
+        charge = pydoocs.read(self.crisp_channel + "CHARGE.TD")["data"][0,1] * 1e-9
+        return charge
+    
+    def get_formfactor(self):
+        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:,0] * 1e12
+        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][:,self.nbunch*2]
+        return freqs, ff_sq
+
+    def get_detlim(self):
+        detlim = pydoocs.read(self.crisp_channel + "FORMFACTOR_MEAN_DETECTLIMIT.XY")["data"][:,1]
+        return detlim
     
     def set_nbunch(self, nbunch):
         self.nbunch = nbunch
@@ -75,11 +116,8 @@ class ReconstructionThread(qtc.QThread):
             
             self._new_crisp_reading_event.clear()
 
-    def submit_reconstruction(self, crisp_reading, charge):
-        self._crisp_reading = crisp_reading
-        self._charge = charge
-
-        self._new_crisp_reading_event.set()
+    def submit_reconstruction(self):
+        raise NotImplementedError
     
     def set_active(self, active_state):
         if active_state:
@@ -92,13 +130,14 @@ class ReconstructionThread(qtc.QThread):
 
 
 class NilsThread(ReconstructionThread):
+
+    def submit_reconstruction(self, freqs, ff, ff_noise, detlim, charge):
+        self.freqs, self.ff, self.ff_noise, self.detlim, self.charge = freqs, ff, ff_noise, detlim, charge
+        self._new_crisp_reading_event.set()
     
     def reconstruct(self):
-        frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
-        charge = self._charge
-
-        t, current, _ = rm.master_recon(frequency, formfactor, formfactor_noise, detlim, charge,
-                                        method="KKstart", channels_to_remove=[], show_plots=False)
+        t, current, _ = recon.master_recon(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge,
+                                           method="KKstart", channels_to_remove=[], show_plots=False)
 
         s = t * constants.speed_of_light
 
@@ -111,15 +150,13 @@ class ANNTHzThread(ReconstructionThread):
         super().__init__()
 
         self.model = spectralvd.AdaptiveANNTHz.load(path)
+
+    def submit_reconstruction(self, freqs, ff):
+        self.freqs, self.ff = freqs, ff
+        self._new_crisp_reading_event.set()
     
     def reconstruct(self):
-        frequency, formfactor, formfactor_noise, detlim = self._crisp_reading
-
-        clean_frequency, clean_formfactor, _ = rm.cleanup_formfactor(frequency, formfactor,
-                                                                     formfactor_noise, detlim,
-                                                                     channels_to_remove=[])
-
-        prediction = self.model.predict([(clean_frequency, clean_formfactor)]*2)
+        prediction = self.model.predict([(self.freqs, self.ff)]*2)
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -144,21 +181,12 @@ class FormfactorPlot(pg.PlotWidget):
 
         self.t_last = time.time()
     
-    def update(self, reading, charge):
-        t_now = time.time()
-        dt = t_now - self.t_last
-        self.t_last = t_now
-        # print(f"Forffactor update running at {1/dt:.2f} Hz")
+    def update(self, freqs, ff, ff_noise, detlim, charge):
+        freqs_scaled = freqs.copy() # np.log10(frequency)
+        ff_scaled = ff.copy()
+        ff_scaled[ff_scaled <= 0] = 1e-3
 
-        frequency, formfactor, _, _ = reading
-
-        frequency_scaled = frequency.copy() # np.log10(frequency)
-        formfactor_scaled = formfactor.copy()
-        formfactor_scaled[formfactor_scaled <= 0] = 1e-3
-        #formfactor_scaled = formfactor_scaled + 1e-12
-        #formfactor_scaled = np.log10(formfactor_scaled + 1)
-
-        self.plot_crisp.setData(frequency_scaled, formfactor_scaled)
+        self.plot_crisp.setData(freqs_scaled, ff_scaled)
 
 
 class CurrentPlot(pg.PlotWidget):
@@ -166,7 +194,7 @@ class CurrentPlot(pg.PlotWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        limit = 0.00020095917745111108 # * 1e6
+        limit = 0.0001
         s = np.linspace(-limit, limit, 100)
         
         annthz_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
@@ -231,8 +259,17 @@ class App(qtw.QWidget):
 
         self.nils_checkbox = qtw.QCheckBox("Nils")
         self.nils_checkbox.setChecked(True)
+        self.lockmann_checkbox = qtw.QCheckBox("LockmANN")
+        self.lockmann_checkbox.setChecked(True)
+        self.annrf_checkbox = qtw.QCheckBox("ANN RF")
+        self.annrf_checkbox.setChecked(True)
         self.annthz_checkbox = qtw.QCheckBox("ANN THz")
         self.annthz_checkbox.setChecked(True)
+        self.annrfthz_checkbox = qtw.QCheckBox("ANN RF+THz")
+        self.annrfthz_checkbox.setChecked(True)
+        self.knnthz_checkbox = qtw.QCheckBox("KNN THz")
+        self.knnthz_checkbox.setChecked(True)
+
         self.l1 = qtw.QLabel("N bunch: x2 ")
         self.sb_nbunch = qtw.QSpinBox()
         self.sb_nbunch.setMaximum(1024)
@@ -244,9 +281,9 @@ class App(qtw.QWidget):
         self.nils_thread = NilsThread()
         self.annthz_thread = ANNTHzThread("models/annthz")
 
-        self.read_thread.new_reading.connect(self.formfactor_plot.update)
-        self.read_thread.new_reading.connect(self.nils_thread.submit_reconstruction)
-        self.read_thread.new_reading.connect(self.annthz_thread.submit_reconstruction)
+        self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
+        self.read_thread.new_raw_reading.connect(self.nils_thread.submit_reconstruction)
+        self.read_thread.new_clean_reading.connect(self.annthz_thread.submit_reconstruction)
         
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
         self.annthz_thread.new_reconstruction.connect(self.current_plot.update_annthz)
@@ -258,10 +295,14 @@ class App(qtw.QWidget):
         self.sb_nbunch.valueChanged.connect(self.read_thread.set_nbunch)
 
         grid = qtw.QGridLayout()
-        grid.addWidget(self.formfactor_plot, 0, 0, 1, 3)
-        grid.addWidget(self.current_plot, 0, 3, 1, 3)
-        grid.addWidget(self.annthz_checkbox, 1, 3, 1, 1)
-        grid.addWidget(self.nils_checkbox, 1, 4, 1, 1)
+        grid.addWidget(self.formfactor_plot, 0, 0, 1, 6)
+        grid.addWidget(self.current_plot, 0, 6, 1, 6)
+        grid.addWidget(self.nils_checkbox, 1, 6, 1, 1)
+        grid.addWidget(self.lockmann_checkbox, 1, 7, 1, 1)
+        grid.addWidget(self.annrf_checkbox, 1, 8, 1, 1)
+        grid.addWidget(self.annthz_checkbox, 1, 9, 1, 1)
+        grid.addWidget(self.annrfthz_checkbox, 1, 10, 1, 1)
+        grid.addWidget(self.knnthz_checkbox, 1, 11, 1, 1)
         grid.addWidget(self.l1, 1, 0, 1, 1)
         grid.addWidget(self.sb_nbunch, 1, 1, 1, 1)
 
