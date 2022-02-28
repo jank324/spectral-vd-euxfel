@@ -245,6 +245,26 @@ class ANNTHzThread(ReconstructionThread):
         return s, current
 
 
+class ANNRFTHzThread(ReconstructionThread):
+
+    def __init__(self, path):
+        super().__init__()
+
+        self.model = spectralvd.AdaptiveANNRFTHz.load(path)
+
+    def submit_reconstruction(self, rf, freqs, ff):
+        self.rf, self.freqs, self.ff = rf, freqs, ff
+        self._new_crisp_reading_event.set()
+    
+    def reconstruct(self):
+        prediction = self.model.predict([self.rf]*2, [(self.freqs,self.ff)]*2)
+
+        s = prediction[0][0]
+        current = prediction[0][1]
+
+        return s, current
+
+
 class FormfactorPlot(pg.PlotWidget):
 
     def __init__(self, *args, **kwargs):
@@ -282,6 +302,7 @@ class CurrentPlot(pg.PlotWidget):
         lockmann_pen = pg.mkPen(qtg.QColor(0, 0, 255), width=3)
         annrf_pen = pg.mkPen(qtg.QColor(255, 255, 0), width=3)
         annthz_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
+        annrfthz_pen = pg.mkPen(qtg.QColor(255, 0, 255), width=3)
         knnthz_pen = pg.mkPen(qtg.QColor(0, 255, 0), width=3)
         
         self.addLegend()
@@ -289,6 +310,7 @@ class CurrentPlot(pg.PlotWidget):
         self.lockmann_plot = self.plot(s, np.zeros(100), pen=lockmann_pen, name="LockmANN")
         self.annrf_plot = self.plot(s, np.zeros(100), pen=annrf_pen, name="ANN RF")
         self.annthz_plot = self.plot(s, np.zeros(100), pen=annthz_pen, name="ANN THz")
+        self.annrfthz_plot = self.plot(s, np.zeros(100), pen=annrfthz_pen, name="ANN RF+THz")
         self.knnthz_plot = self.plot(s, np.zeros(100), pen=knnthz_pen, name="KNN THz")
         self.setXRange(-limit, limit)
         self.setYRange(0, 10e3)
@@ -300,6 +322,7 @@ class CurrentPlot(pg.PlotWidget):
         self._lockmann_hidden = False
         self._annrf_hidden = False
         self._annthz_hidden = False
+        self._annrfthz_hidden = False
         self._knnthz_hidden = False
     
     def update_nils(self, s, current):
@@ -329,6 +352,13 @@ class CurrentPlot(pg.PlotWidget):
 
         if not self._annthz_hidden:
             self.annthz_plot.setData(self.annthz_s_scaled, self.annthz_current_scaled)
+    
+    def update_annrfthz(self, s, current):
+        self.annrfthz_s_scaled = s                # * 1e6
+        self.annrfthz_current_scaled = current    # * 1e-3
+
+        if not self._annrfthz_hidden:
+            self.annrfthz_plot.setData(self.annrfthz_s_scaled, self.annrfthz_current_scaled)
     
     def update_knnthz(self, s, current):
         self.knnthz_s_scaled = s                # * 1e6
@@ -369,6 +399,14 @@ class CurrentPlot(pg.PlotWidget):
             # self.annthz_plot.clear()
             self.annthz_plot.setData([], [])
     
+    def hide_annrfthz(self, show):
+        self._annrfthz_hidden = not show
+        if show:
+            self.annrfthz_plot.setData(self.annrfthz_s_scaled, self.annrfthz_current_scaled)
+        else:
+            # self.annrfthz_plot.clear()
+            self.annrfthz_plot.setData([], [])
+    
     def hide_knnthz(self, show):
         self._knnthz_hidden = not show
         if show:
@@ -394,8 +432,7 @@ class App(qtw.QWidget):
         self.annthz_checkbox = qtw.QCheckBox("ANN THz")
         self.annthz_checkbox.setChecked(True)
         self.annrfthz_checkbox = qtw.QCheckBox("ANN RF+THz")
-        self.annrfthz_checkbox.setChecked(False)
-        self.annrfthz_checkbox.setEnabled(False)
+        self.annrfthz_checkbox.setChecked(True)
         self.knnthz_checkbox = qtw.QCheckBox("KNN THz")
         self.knnthz_checkbox.setChecked(True)
 
@@ -411,6 +448,7 @@ class App(qtw.QWidget):
         self.lockmann_thread = LockmANNThread("models/annthz")
         self.annrf_thread = ANNRFThread("models/annrf")
         self.annthz_thread = ANNTHzThread("models/annthz")
+        self.annrfthz_thread = ANNRFTHzThread("models/annrfthz")
         self.knnthz_thread = KNNTHzThread("models/knnthz")
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
@@ -418,12 +456,14 @@ class App(qtw.QWidget):
         self.read_thread.new_raw_reading.connect(self.lockmann_thread.submit_reconstruction)
         self.read_thread.new_rf_reading.connect(self.annrf_thread.submit_reconstruction)
         self.read_thread.new_clean_reading.connect(self.annthz_thread.submit_reconstruction)
+        self.read_thread.new_combined_reading.connect(self.annrfthz_thread.submit_reconstruction)
         self.read_thread.new_clean_reading.connect(self.knnthz_thread.submit_reconstruction)
         
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
         self.lockmann_thread.new_reconstruction.connect(self.current_plot.update_lockmann)
         self.annrf_thread.new_reconstruction.connect(self.current_plot.update_annrf)
         self.annthz_thread.new_reconstruction.connect(self.current_plot.update_annthz)
+        self.annrfthz_thread.new_reconstruction.connect(self.current_plot.update_annrfthz)
         self.knnthz_thread.new_reconstruction.connect(self.current_plot.update_knnthz)
 
         self.nils_checkbox.stateChanged.connect(self.nils_thread.set_active)
@@ -434,6 +474,8 @@ class App(qtw.QWidget):
         self.annrf_checkbox.stateChanged.connect(self.current_plot.hide_annrf)
         self.annthz_checkbox.stateChanged.connect(self.annthz_thread.set_active)
         self.annthz_checkbox.stateChanged.connect(self.current_plot.hide_annthz)
+        self.annrfthz_checkbox.stateChanged.connect(self.annrfthz_thread.set_active)
+        self.annrfthz_checkbox.stateChanged.connect(self.current_plot.hide_annrfthz)
         self.knnthz_checkbox.stateChanged.connect(self.knnthz_thread.set_active)
         self.knnthz_checkbox.stateChanged.connect(self.current_plot.hide_knnthz)
         self.sb_nbunch.valueChanged.connect(self.read_thread.set_nbunch)
@@ -457,6 +499,7 @@ class App(qtw.QWidget):
         self.lockmann_thread.start()
         self.annrf_thread.start()
         self.annthz_thread.start()
+        self.annrfthz_thread.start()
         self.knnthz_thread.start()
 
     def handle_application_exit(self):
