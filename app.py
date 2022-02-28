@@ -416,6 +416,12 @@ class CurrentPlot(pg.PlotWidget):
             self.knnthz_plot.setData([], [])
 
 
+class PeakPlot(pg.PlotWidget):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
 class App(qtw.QWidget):
 
     def __init__(self):
@@ -445,6 +451,7 @@ class App(qtw.QWidget):
 
         self.formfactor_plot = FormfactorPlot()
         self.current_plot = CurrentPlot()
+        self.peak_plot = PeakPlot()
 
         self.a1v_label = qtw.QLabel("A1 Voltage")
         self.a1v_true = qtw.QLabel("-")
@@ -545,6 +552,7 @@ class App(qtw.QWidget):
         grid.addWidget(self.l2phi_label, 28, 12, 1, 2)
         grid.addWidget(self.l2phi_true, 29, 12, 1, 2)
         grid.addWidget(self.l2phi_predict, 30, 12, 1, 2)
+        grid.addWidget(self.peak_plot, 33, 0, 3, 12)
 
         self.setLayout(grid)
 
@@ -590,7 +598,7 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     window = App()
-    window.resize(1300, 600)
+    window.resize(1300, 750)
     window.show()
 
     app.aboutToQuit.connect(window.handle_application_exit)
