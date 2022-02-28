@@ -440,6 +440,9 @@ class App(qtw.QWidget):
         self.sb_nbunch = qtw.QSpinBox()
         self.sb_nbunch.setMaximum(1024)
 
+        self.refresh_button = qtw.QPushButton("Refresh Low Frequencies")
+        self.grating_label = qtw.QLabel("-")
+
         self.formfactor_plot = FormfactorPlot()
         self.current_plot = CurrentPlot()
 
@@ -516,6 +519,8 @@ class App(qtw.QWidget):
         grid.addWidget(self.knnthz_checkbox, 32, 11, 1, 1)
         grid.addWidget(self.l1, 32, 0, 1, 1)
         grid.addWidget(self.sb_nbunch, 32, 1, 1, 1)
+        grid.addWidget(self.refresh_button, 32, 3, 1, 1)
+        grid.addWidget(self.grating_label, 32, 4, 1, 1)
         grid.addWidget(self.a1v_label, 0, 12, 1, 2)
         grid.addWidget(self.a1v_true, 1, 12, 1, 2)
         grid.addWidget(self.a1v_predict, 2, 12, 1, 2)
