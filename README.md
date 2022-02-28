@@ -35,7 +35,7 @@ In order to create a new Anaconda environment that is configured correctly, run 
 ```bash
 git clone https://github.com/jank324/spectral-vd-euxfel.git
 cd spectral-vd-euxfel
-conda create --name spectral-vd python=3.7
+conda create --name spectral-vd python=3.9
 conda activate spectral-vd
 pip install requirements.txt
 ```
