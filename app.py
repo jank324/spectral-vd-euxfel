@@ -494,6 +494,7 @@ class App(qtw.QWidget):
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
         self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
+        self.read_thread.new_rf_reading.connect(self.update_rf_true)
         self.read_thread.new_raw_reading.connect(self.nils_thread.submit_reconstruction)
         self.read_thread.new_raw_reading.connect(self.lockmann_thread.submit_reconstruction)
         self.read_thread.new_rf_reading.connect(self.annrf_thread.submit_reconstruction)
@@ -576,6 +577,16 @@ class App(qtw.QWidget):
         self.annrf_checkbox.setChecked(False)
         self.annrfthz_checkbox.setChecked(False)
         self.knnthz_checkbox.setChecked(False)
+    
+    def update_rf_true(self, rf):
+        self.a1v_true.setText(f"True = {rf[0]:.2f}")
+        self.a1phi_true.setText(f"True = {rf[1]:.2f}")
+        self.ah1v_true.setText(f"True = {rf[2]:.2f}")
+        self.ah1phi_true.setText(f"True = {rf[3]:.2f}")
+        self.l1v_true.setText(f"True = {rf[4]:.2f}")
+        self.l1phi_true.setText(f"True = {rf[5]:.2f}")
+        self.l2v_true.setText(f"True = {rf[6]:.2f}")
+        self.l2phi_true.setText(f"True = {rf[7]:.2f}")
 
     def handle_application_exit(self):
         pass
