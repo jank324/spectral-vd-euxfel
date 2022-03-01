@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor
 import sys
 from threading import Event
 import time
-from turtle import color
 
 import numpy as np
 import pydoocs
@@ -14,6 +13,7 @@ import pyqtgraph as pg
 from scipy import constants
 
 import nils.reconstruction_module as recon
+import nils.reconstruction_module_after_diss as adiss
 import spectralvd
 
 
@@ -158,8 +158,9 @@ class NilsThread(ReconstructionThread):
         self._new_crisp_reading_event.set()
     
     def reconstruct(self):
-        t, current, _ = recon.master_recon(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge,
+        reconstructed = adiss.master_recon(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge,
                                            method="KKstart", channels_to_remove=[], show_plots=False)
+        t, current = reconstructed[:2]
 
         s = t * constants.speed_of_light
 

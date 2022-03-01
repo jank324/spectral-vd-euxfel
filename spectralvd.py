@@ -7,7 +7,8 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from nils.reconstruction_module import cleanup_formfactor, master_recon
+from nils.reconstruction_module import cleanup_formfactor
+from nils.reconstruction_module_after_diss import master_recon
 
 
 def from_pickle(path):
@@ -673,9 +674,10 @@ class LockmANN(AdaptiveANNTHz):
 
         nils_currents = []
         for frequencies, formfactors, formfactor_noise, detlim, charge in formfactors:
-            recon_time, recon_current, _ = master_recon(frequencies, formfactors, formfactor_noise,
-                                                        detlim, charge=charge, method="KKstart",
-                                                        channels_to_remove=[], show_plots=False)
+            reconstructed = master_recon(frequencies, formfactors, formfactor_noise,
+                                         detlim, charge=charge, method="KKstart",
+                                         channels_to_remove=[], show_plots=False)
+            recon_time, recon_current = reconstructed[:2]                                       
             centered = self.center_current((recon_time*3e8, recon_current))
             nils_currents.append(centered)
         
