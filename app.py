@@ -12,6 +12,7 @@ import PyQt5.QtWidgets as qtw
 import pyqtgraph as pg
 from scipy import constants
 
+import nils.crisp_functions as crisp
 import nils.reconstruction_module as recon
 import nils.reconstruction_module_after_diss as adiss
 import spectralvd
@@ -23,6 +24,7 @@ class ReadThread(qtc.QThread):
     new_clean_reading = qtc.pyqtSignal(np.ndarray, np.ndarray)
     new_rf_reading = qtc.pyqtSignal(np.ndarray)
     new_combined_reading = qtc.pyqtSignal(np.ndarray, np.ndarray, np.ndarray)
+    new_stage_reading = qtc.pyqtSignal(str)
 
     crisp_channel = "XFEL.SDIAG/THZ_SPECTROMETER.FORMFACTOR/CRD.1934.TL/"
 
@@ -42,7 +44,7 @@ class ReadThread(qtc.QThread):
         while True:
             self.wait_for_next_shot()
 
-            rf, freqs, ff, ff_noise, detlim, charge = self.read()
+            rf, freqs, ff, ff_noise, detlim, charge, stage = self.read()
             self.new_raw_reading.emit(freqs, ff, ff_noise, detlim, charge)
 
             freqs_clean, ff_clean, _ = recon.cleanup_formfactor(freqs, ff, ff_noise, detlim, channels_to_remove=[])
@@ -50,6 +52,8 @@ class ReadThread(qtc.QThread):
 
             self.new_rf_reading.emit(rf)
             self.new_combined_reading.emit(rf, freqs_clean, ff_clean)
+
+            self.new_stage_reading.emit(stage)
     
     def wait_for_next_shot(self):
         shot_dt = 1 / self.shot_frequency
@@ -87,7 +91,9 @@ class ReadThread(qtc.QThread):
         
         charge_mean = np.mean(self.charges)
 
-        return rf_mean, freqs, ff, ff_noise, detlim_mean, charge_mean
+        stage = crisp.get_stage_position()
+
+        return rf_mean, freqs, ff, ff_noise, detlim_mean, charge_mean, stage
     
     def get_rf(self):
         facility = "XFEL.RF"
@@ -653,6 +659,7 @@ class App(qtw.QWidget):
         self.read_thread.new_combined_reading.connect(self.annrfthz_thread.submit_reconstruction)
         self.read_thread.new_clean_reading.connect(self.knnthz_thread.submit_reconstruction)
         self.read_thread.new_combined_reading.connect(self.reverse_thread.submit_reversal)
+        self.read_thread.new_stage_reading.connect(self.update_stage_label)
         
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
         self.lockmann_thread.new_reconstruction.connect(self.current_plot.update_lockmann)
@@ -679,6 +686,8 @@ class App(qtw.QWidget):
         self.peak_checkbox.stateChanged.connect(self.peak_thread.set_active)
 
         self.sb_nbunch.valueChanged.connect(self.read_thread.set_nbunch)
+
+        self.refresh_button.clicked.connect(self.start_crisp_refresh)
 
         self.reverse_thread.active_state_changed.connect(self.show_reversed_rf)
 
@@ -772,6 +781,21 @@ class App(qtw.QWidget):
             self.l1phi_predict.setText(f"-")
             self.l2v_predict.setText(f"-")
             self.l2phi_predict.setText(f"-")
+    
+    def start_crisp_refresh(self):
+        if not hasattr(self, "crisp_refresh_executor"):
+            self.crisp_refresh_executor = ThreadPoolExecutor(max_workers=1)
+
+        self.crisp_refresh_executor.submit(self.refresh_crisp)
+    
+    def refresh_crisp(self):
+        if self.refresh_button.isEnabled:
+            self.refresh_button.isEnabled = False
+            crisp.update_crisp()
+            self.refresh_button.isEnabled = True
+    
+    def update_stage_label(self, stage):
+        self.grating_label.setText(f"Grating = {stage}")
 
     def handle_application_exit(self):
         pass
