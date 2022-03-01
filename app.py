@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import sys
 from threading import Event
 import time
+from turtle import color
 
 import numpy as np
 import pydoocs
@@ -304,6 +305,83 @@ class ReverseThread(qtc.QThread):
         return prediction[0]
 
 
+class PeakThread(ReadThread):
+
+    new_peaks = qtc.pyqtSignal(np.ndarray)
+
+    def __init__(self, path, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.model = spectralvd.PeakANNRFTHz.load(path)
+
+    def run(self):
+        while True:
+            self.wait_for_next_shot()
+
+            rf, freqs, ffs, ff_noise, detlim, charge = self.read()
+            cleaned = self.clean(freqs, ffs, ff_noise, detlim, charge)
+
+            peaks = self.model.predict(rf, cleaned).squeeze()
+
+            print("osifosidfosidjfosidjfosidjfosidjfosdijfosidfjosidfjosidfosidfjosifjosifjosidjf")
+            print(f"{peaks.shape = }")
+            print(f"{peaks = }")
+
+            self.new_peaks.emit(peaks)
+    
+    def read(self):
+        rf_future = self.executor.submit(self.get_rf)
+        charge_future = self.executor.submit(self.get_charge)
+        ff_future = self.executor.submit(self.get_formfactor)
+        detlim_future = self.executor.submit(self.get_detlim)
+        
+        rf = rf_future.result()
+        charge = charge_future.result()
+        freqs, ff_sq = ff_future.result()
+        detlim = detlim_future.result()
+
+        ff_sq = ff_sq.transpose()
+
+        self.rfs.append(rf)
+        self.ffs.append(ff_sq)
+        self.charges.append(charge)
+
+        n_bunches = ff_sq.shape[0]
+
+        rf_mean = np.array(self.rfs).mean(axis=0)
+        rf_mean_all = np.repeat(rf_mean[np.newaxis,:], n_bunches, axis=0)
+
+        freqs_all = np.repeat(freqs[np.newaxis,:], n_bunches, axis=0)
+
+        ff_all = np.zeros((n_bunches,240))
+        ff_noise_all = np.zeros((n_bunches,240))
+        for i in range(n_bunches):
+            ffs = [x[i] for x in self.ffs]
+
+            ff_sq_mean = np.array(ffs).mean(axis=0)
+            ff = np.sqrt(np.abs(ff_sq_mean)) * np.sign(ff_sq_mean)
+            ff_all[i] = ff
+
+            ff_sq_noise = np.std(np.array(ffs), axis=0)
+            ff_noise = np.abs(0.5 / ff * ff_sq_noise)
+            ff_noise_all[i] = ff_noise
+
+        detlim_mean = np.sqrt(detlim * np.sqrt(10 / len(self.ffs)))
+        detlim_all = np.repeat(detlim_mean[np.newaxis,:], n_bunches, axis=0)
+        
+        charge_all = np.repeat(np.mean(self.charges), n_bunches)
+
+        return rf_mean_all, freqs_all, ff_all, ff_noise_all, detlim_all, charge_all
+
+    def get_formfactor(self):
+        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:,0] * 1e12
+        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][:,::2]
+        return freqs, ff_sq
+    
+    def clean(self, freqs, ffs, ff_noise, detlim, charge):
+        return [(freqs_clean, ff_clean) for freqs_clean, ff_clean, _ in self.executor.map(recon.cleanup_formfactor, freqs, ffs, ff_noise, detlim, [[]]*len(ffs))]
+
+
 class FormfactorPlot(pg.PlotWidget):
 
     def __init__(self, *args, **kwargs):
@@ -462,9 +540,18 @@ class CurrentPlot(pg.PlotWidget):
 
 
 class PeakPlot(pg.PlotWidget):
-
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
+        
+        self.bar = pg.BarGraphItem(x=np.arange(1024), height=np.zeros(1024), width=0.6, color="green")
+        self.addItem(self.bar)
+    
+    def update(self, peaks):
+        peaks_scaled = peaks.copy()               # * 1e6
+        self.bar.setOpts(height=peaks_scaled)
 
 
 class App(qtw.QWidget):
@@ -539,6 +626,7 @@ class App(qtw.QWidget):
         self.annrfthz_thread = ANNRFTHzThread("models/annrfthz")
         self.knnthz_thread = KNNTHzThread("models/knnthz")
         self.reverse_thread = ReverseThread("models/reverserfdisturbedann")
+        self.peak_thread = PeakThread("models/peakannrfthz")
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
         self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
@@ -558,6 +646,7 @@ class App(qtw.QWidget):
         self.annrfthz_thread.new_reconstruction.connect(self.current_plot.update_annrfthz)
         self.knnthz_thread.new_reconstruction.connect(self.current_plot.update_knnthz)
         self.reverse_thread.new_reversal.connect(self.update_rf_prediction)
+        self.peak_thread.new_peaks.connect(self.peak_plot.update)
 
         self.nils_checkbox.stateChanged.connect(self.nils_thread.set_active)
         self.nils_checkbox.stateChanged.connect(self.current_plot.hide_nils)
@@ -622,6 +711,7 @@ class App(qtw.QWidget):
         self.annrfthz_thread.start()
         self.knnthz_thread.start()
         self.reverse_thread.start()
+        self.peak_thread.start()
 
         # Turn off some of the plots at app startup
         self.lockmann_checkbox.setChecked(False)
