@@ -265,6 +265,45 @@ class ANNRFTHzThread(ReconstructionThread):
         return s, current
 
 
+class ReverseThread(qtc.QThread):
+
+    new_reversal = qtc.pyqtSignal(np.ndarray)
+
+    def __init__(self, path):
+        super().__init__()
+        self._new_crisp_reading_event = Event()
+        self._new_crisp_reading_event.clear()
+
+        self._active_event = Event()
+        self._active_event.set()
+
+        self.model = spectralvd.ReverseRFDisturbedANN.load(path)
+
+    def run(self):
+        while True:
+            self._active_event.wait()
+            self._new_crisp_reading_event.wait()
+
+            predicted_rf = self.reconstruct()
+            self.new_reversal.emit(predicted_rf)
+            
+            self._new_crisp_reading_event.clear()
+
+    def submit_reversal(self, rf, freqs, ff):
+        self.rf, self.freqs, self.ff = rf, freqs, ff
+        self._new_crisp_reading_event.set()
+    
+    def set_active(self, active_state):
+        if active_state:
+            self._active_event.set()
+        else:
+            self._active_event.clear()
+    
+    def reconstruct(self):
+        prediction = self.model.predict([self.rf]*2, [(self.freqs,self.ff)]*2)
+        return prediction[0]
+
+
 class FormfactorPlot(pg.PlotWidget):
 
     def __init__(self, *args, **kwargs):
@@ -460,27 +499,35 @@ class App(qtw.QWidget):
         self.peak_plot = PeakPlot()
 
         self.a1v_label = qtw.QLabel("A1 Voltage")
+        self.a1v_label.setStyleSheet("font-weight: bold")
         self.a1v_true = qtw.QLabel("-")
         self.a1v_predict = qtw.QLabel("-")
         self.a1phi_label = qtw.QLabel("A1 Phase")
+        self.a1phi_label.setStyleSheet("font-weight: bold")
         self.a1phi_true = qtw.QLabel("-")
         self.a1phi_predict = qtw.QLabel("-")
         self.ah1v_label = qtw.QLabel("A1H Voltage")
+        self.ah1v_label.setStyleSheet("font-weight: bold")
         self.ah1v_true = qtw.QLabel("-")
         self.ah1v_predict = qtw.QLabel("-")
         self.ah1phi_label = qtw.QLabel("AH1 Phase")
+        self.ah1phi_label.setStyleSheet("font-weight: bold")
         self.ah1phi_true = qtw.QLabel("-")
         self.ah1phi_predict = qtw.QLabel("-")
         self.l1v_label = qtw.QLabel("L1 Voltage")
+        self.l1v_label.setStyleSheet("font-weight: bold")
         self.l1v_true = qtw.QLabel("-")
         self.l1v_predict = qtw.QLabel("-")
         self.l1phi_label = qtw.QLabel("L1 Phase")
+        self.l1phi_label.setStyleSheet("font-weight: bold")
         self.l1phi_true = qtw.QLabel("-")
         self.l1phi_predict = qtw.QLabel("-")
         self.l2v_label = qtw.QLabel("L2 Voltage")
+        self.l2v_label.setStyleSheet("font-weight: bold")
         self.l2v_true = qtw.QLabel("-")
         self.l2v_predict = qtw.QLabel("-")
         self.l2phi_label = qtw.QLabel("L2 Phase")
+        self.l2phi_label.setStyleSheet("font-weight: bold")
         self.l2phi_true = qtw.QLabel("-")
         self.l2phi_predict = qtw.QLabel("-")
 
@@ -491,6 +538,7 @@ class App(qtw.QWidget):
         self.annthz_thread = ANNTHzThread("models/annthz")
         self.annrfthz_thread = ANNRFTHzThread("models/annrfthz")
         self.knnthz_thread = KNNTHzThread("models/knnthz")
+        self.reverse_thread = ReverseThread("models/reverserfdisturbedann")
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
         self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
@@ -501,6 +549,7 @@ class App(qtw.QWidget):
         self.read_thread.new_clean_reading.connect(self.annthz_thread.submit_reconstruction)
         self.read_thread.new_combined_reading.connect(self.annrfthz_thread.submit_reconstruction)
         self.read_thread.new_clean_reading.connect(self.knnthz_thread.submit_reconstruction)
+        self.read_thread.new_combined_reading.connect(self.reverse_thread.submit_reversal)
         
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
         self.lockmann_thread.new_reconstruction.connect(self.current_plot.update_lockmann)
@@ -508,6 +557,7 @@ class App(qtw.QWidget):
         self.annthz_thread.new_reconstruction.connect(self.current_plot.update_annthz)
         self.annrfthz_thread.new_reconstruction.connect(self.current_plot.update_annrfthz)
         self.knnthz_thread.new_reconstruction.connect(self.current_plot.update_knnthz)
+        self.reverse_thread.new_reversal.connect(self.update_rf_prediction)
 
         self.nils_checkbox.stateChanged.connect(self.nils_thread.set_active)
         self.nils_checkbox.stateChanged.connect(self.current_plot.hide_nils)
@@ -571,6 +621,7 @@ class App(qtw.QWidget):
         self.annthz_thread.start()
         self.annrfthz_thread.start()
         self.knnthz_thread.start()
+        self.reverse_thread.start()
 
         # Turn off some of the plots at app startup
         self.lockmann_checkbox.setChecked(False)
@@ -579,14 +630,24 @@ class App(qtw.QWidget):
         self.knnthz_checkbox.setChecked(False)
     
     def update_rf_true(self, rf):
-        self.a1v_true.setText(f"True = {rf[0]:.2f}")
-        self.a1phi_true.setText(f"True = {rf[1]:.2f}")
-        self.ah1v_true.setText(f"True = {rf[2]:.2f}")
-        self.ah1phi_true.setText(f"True = {rf[3]:.2f}")
-        self.l1v_true.setText(f"True = {rf[4]:.2f}")
-        self.l1phi_true.setText(f"True = {rf[5]:.2f}")
-        self.l2v_true.setText(f"True = {rf[6]:.2f}")
-        self.l2phi_true.setText(f"True = {rf[7]:.2f}")
+        self.a1v_true.setText(f"Readback = {rf[0]:.2f}")
+        self.a1phi_true.setText(f"Readback = {rf[1]:.2f}")
+        self.ah1v_true.setText(f"Readback = {rf[2]:.2f}")
+        self.ah1phi_true.setText(f"Readback = {rf[3]:.2f}")
+        self.l1v_true.setText(f"Readback = {rf[4]:.2f}")
+        self.l1phi_true.setText(f"Readback = {rf[5]:.2f}")
+        self.l2v_true.setText(f"Readback = {rf[6]:.2f}")
+        self.l2phi_true.setText(f"Readback = {rf[7]:.2f}")
+    
+    def update_rf_prediction(self, rf):
+        self.a1v_predict.setText(f"DANN = {rf[0]:.2f}")
+        self.a1phi_predict.setText(f"DANN = {rf[1]:.2f}")
+        self.ah1v_predict.setText(f"DANN = {rf[2]:.2f}")
+        self.ah1phi_predict.setText(f"DANN = {rf[3]:.2f}")
+        self.l1v_predict.setText(f"DANN = {rf[4]:.2f}")
+        self.l1phi_predict.setText(f"DANN = {rf[5]:.2f}")
+        self.l2v_predict.setText(f"DANN = {rf[6]:.2f}")
+        self.l2phi_predict.setText(f"DANN = {rf[7]:.2f}")
 
     def handle_application_exit(self):
         pass
