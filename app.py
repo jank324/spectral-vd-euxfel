@@ -269,6 +269,7 @@ class ANNRFTHzThread(ReconstructionThread):
 class ReverseThread(qtc.QThread):
 
     new_reversal = qtc.pyqtSignal(np.ndarray)
+    active_state_changed = qtc.pyqtSignal(bool)
 
     def __init__(self, path):
         super().__init__()
@@ -286,7 +287,10 @@ class ReverseThread(qtc.QThread):
             self._new_crisp_reading_event.wait()
 
             predicted_rf = self.reconstruct()
-            self.new_reversal.emit(predicted_rf)
+            if self._active_event.is_set():
+                self.new_reversal.emit(predicted_rf)
+            else:
+                self.active_state_changed.emit(self._active_event.is_set())
             
             self._new_crisp_reading_event.clear()
 
@@ -312,22 +316,28 @@ class PeakThread(ReadThread):
     def __init__(self, path, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self._active_event = Event()
+        self._active_event.set()
+
         self.model = spectralvd.PeakANNRFTHz.load(path)
 
     def run(self):
         while True:
             self.wait_for_next_shot()
+            self._active_event.wait()
 
             rf, freqs, ffs, ff_noise, detlim, charge = self.read()
             cleaned = self.clean(freqs, ffs, ff_noise, detlim, charge)
 
             peaks = self.model.predict(rf, cleaned).squeeze()
 
-            print("osifosidfosidjfosidjfosidjfosidjfosdijfosidfjosidfjosidfosidfjosifjosifjosidjf")
-            print(f"{peaks.shape = }")
-            print(f"{peaks = }")
-
             self.new_peaks.emit(peaks)
+    
+    def set_active(self, active_state):
+        if active_state:
+            self._active_event.set()
+        else:
+            self._active_event.clear()
     
     def read(self):
         rf_future = self.executor.submit(self.get_rf)
@@ -573,6 +583,10 @@ class App(qtw.QWidget):
         self.annrfthz_checkbox.setChecked(True)
         self.knnthz_checkbox = qtw.QCheckBox("KNN THz")
         self.knnthz_checkbox.setChecked(True)
+        self.rf_checkbox = qtw.QCheckBox("RF Prediction")
+        self.rf_checkbox.setChecked(True)
+        self.peak_checkbox = qtw.QCheckBox("Peak Prediction")
+        self.peak_checkbox.setChecked(True)
 
         self.l1 = qtw.QLabel("N bunch: x2 ")
         self.sb_nbunch = qtw.QSpinBox()
@@ -660,7 +674,12 @@ class App(qtw.QWidget):
         self.annrfthz_checkbox.stateChanged.connect(self.current_plot.hide_annrfthz)
         self.knnthz_checkbox.stateChanged.connect(self.knnthz_thread.set_active)
         self.knnthz_checkbox.stateChanged.connect(self.current_plot.hide_knnthz)
+        self.rf_checkbox.stateChanged.connect(self.reverse_thread.set_active)
+        self.peak_checkbox.stateChanged.connect(self.peak_thread.set_active)
+
         self.sb_nbunch.valueChanged.connect(self.read_thread.set_nbunch)
+
+        self.reverse_thread.active_state_changed.connect(self.show_reversed_rf)
 
         grid = qtw.QGridLayout()
         grid.addWidget(self.formfactor_plot, 0, 0, 32, 6)
@@ -700,6 +719,8 @@ class App(qtw.QWidget):
         grid.addWidget(self.l2phi_true, 29, 12, 1, 2)
         grid.addWidget(self.l2phi_predict, 30, 12, 1, 2)
         grid.addWidget(self.peak_plot, 33, 0, 3, 12)
+        grid.addWidget(self.rf_checkbox, 33, 12, 1, 1)
+        grid.addWidget(self.peak_checkbox, 34, 12, 1, 1)
 
         self.setLayout(grid)
 
@@ -718,6 +739,7 @@ class App(qtw.QWidget):
         self.annrf_checkbox.setChecked(False)
         self.annrfthz_checkbox.setChecked(False)
         self.knnthz_checkbox.setChecked(False)
+        self.peak_checkbox.setChecked(False)
     
     def update_rf_true(self, rf):
         self.a1v_true.setText(f"Readback = {rf[0]:.2f}")
@@ -738,6 +760,17 @@ class App(qtw.QWidget):
         self.l1phi_predict.setText(f"DANN = {rf[5]:.2f}")
         self.l2v_predict.setText(f"DANN = {rf[6]:.2f}")
         self.l2phi_predict.setText(f"DANN = {rf[7]:.2f}")
+    
+    def show_reversed_rf(self, should_show):
+        if not should_show:
+            self.a1v_predict.setText(f"-")
+            self.a1phi_predict.setText(f"-")
+            self.ah1v_predict.setText(f"-")
+            self.ah1phi_predict.setText(f"-")
+            self.l1v_predict.setText(f"-")
+            self.l1phi_predict.setText(f"-")
+            self.l2v_predict.setText(f"-")
+            self.l2phi_predict.setText(f"-")
 
     def handle_application_exit(self):
         pass
