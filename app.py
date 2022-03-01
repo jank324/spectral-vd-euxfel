@@ -270,24 +270,30 @@ class FormfactorPlot(pg.PlotWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        pen = pg.mkPen("c", width=2)
+        pen_crisp = pg.mkPen("c", width=2)
+        pen_clean = pg.mkPen("g", width=2)
+
         self.addLegend()
-        self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen, name="CRISP")
-        # self.setXRange(int(684283010000), int(58267340000000))
-        # self.setYRange(10e-3, 2)
+        self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen_crisp, name="CRISP")
+        self.plot_clean = self.plot(range(999), np.ones(999), pen=pen_clean, name="Cleaned")
         self.setLogMode(x=True, y=True)
         self.setLabel("bottom", text="Frequency", units="Hz")
         self.setLabel("left", text="|Frequency|")
         self.showGrid(x=True, y=True)
 
-        self.t_last = time.time()
+        self.freqs_scaled = range(999)
     
     def update(self, freqs, ff, ff_noise, detlim, charge):
-        freqs_scaled = freqs.copy() # np.log10(frequency)
-        ff_scaled = ff.copy()
-        ff_scaled[ff_scaled <= 0] = 1e-3
+        self.freqs_scaled = freqs.copy() # np.log10(frequency)
+        self.ff_scaled = ff.copy()
+        self.ff_scaled[self.ff_scaled <= 0] = 1e-3
 
-        self.plot_crisp.setData(freqs_scaled, ff_scaled)
+        self.plot_crisp.setData(self.freqs_scaled, self.ff_scaled)
+    
+    def update_clean(self, freqs, ff):
+        ff_scaled = np.interp(self.freqs_scaled, freqs, ff)
+
+        self.plot_clean.setData(self.freqs_scaled, ff_scaled)
 
 
 class CurrentPlot(pg.PlotWidget):
@@ -487,6 +493,7 @@ class App(qtw.QWidget):
         self.knnthz_thread = KNNTHzThread("models/knnthz")
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
+        self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
         self.read_thread.new_raw_reading.connect(self.nils_thread.submit_reconstruction)
         self.read_thread.new_raw_reading.connect(self.lockmann_thread.submit_reconstruction)
         self.read_thread.new_rf_reading.connect(self.annrf_thread.submit_reconstruction)
