@@ -319,7 +319,7 @@ class PeakThread(ReadThread):
         self._active_event = Event()
         self._active_event.set()
 
-        self.model = spectralvd.PeakANNRFTHz.load(path)
+        self.model = spectralvd.PeakANNTHz.load(path)
 
     def run(self):
         while True:
@@ -329,7 +329,7 @@ class PeakThread(ReadThread):
             rf, freqs, ffs, ff_noise, detlim, charge = self.read()
             cleaned = self.clean(freqs, ffs, ff_noise, detlim, charge)
 
-            peaks = self.model.predict(rf, cleaned).squeeze()
+            peaks = self.model.predict(cleaned).squeeze()
 
             self.new_peaks.emit(peaks)
     
@@ -640,7 +640,7 @@ class App(qtw.QWidget):
         self.annrfthz_thread = ANNRFTHzThread("models/annrfthz")
         self.knnthz_thread = KNNTHzThread("models/knnthz")
         self.reverse_thread = ReverseThread("models/reverserfdisturbedann")
-        self.peak_thread = PeakThread("models/peakannrfthz")
+        self.peak_thread = PeakThread("models/peakannthz")
 
         self.read_thread.new_raw_reading.connect(self.formfactor_plot.update)
         self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
