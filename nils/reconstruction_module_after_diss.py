@@ -501,7 +501,7 @@ def gerchberg_saxton(formfactors, formfactors_noise_plus, formfactors_noise_minu
     not_converged = True
     while not_converged :
         #print(difference)
-        print(n)
+        # print(n)
     #while difference > phase_condition:
         prev_phase = np.copy(seed_phase)
         #Nur Formfaktoren austauschen, die nicht im Rauschen liegen
@@ -509,10 +509,10 @@ def gerchberg_saxton(formfactors, formfactors_noise_plus, formfactors_noise_minu
         bools_too_low = new_formfactor<(formfactors - formfactors_noise_minus)
         bools_too_high = new_formfactor>(formfactors + formfactors_noise_plus)
         if n>0 and np.logical_not(np.any(bools_too_low)) and np.logical_not(np.any(bools_too_high)):
-            print('Convergiert: ' + str(n))
+            # print('Convergiert: ' + str(n))
             not_converged = False
         if n>20:
-            print('stopped trying at n=' + str(n))
+            # print('stopped trying at n=' + str(n))
             not_converged = False
         new_formfactor[bools_too_low]= formfactors[bools_too_low]
         new_formfactor[bools_too_high]= formfactors[bools_too_high]
