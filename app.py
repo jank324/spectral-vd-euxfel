@@ -18,6 +18,16 @@ import nils.reconstruction_module_after_diss as adiss
 import spectralvd
 
 
+COLORS = [
+    (138, 176, 207),
+    (243, 182, 112),
+    (188, 219, 120),
+    (231, 133, 119),
+    (179, 134, 185),
+    (253, 236, 130)
+]
+
+
 class ReadThread(qtc.QThread):
 
     new_raw_reading = qtc.pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray, float)
@@ -404,8 +414,8 @@ class FormfactorPlot(pg.PlotWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        pen_crisp = pg.mkPen("c", width=2)
-        pen_clean = pg.mkPen("g", width=2)
+        pen_crisp = pg.mkPen(qtg.QColor(*COLORS[0]), width=2)
+        pen_clean = pg.mkPen(qtg.QColor(*COLORS[1]), width=2)
 
         self.addLegend()
         self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen_crisp, name="CRISP")
@@ -438,12 +448,12 @@ class CurrentPlot(pg.PlotWidget):
         limit = 0.0001
         s = np.linspace(-limit, limit, 100)
         
-        nils_pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
-        lockmann_pen = pg.mkPen(qtg.QColor(0, 0, 255), width=3)
-        annrf_pen = pg.mkPen(qtg.QColor(255, 255, 0), width=3)
-        annthz_pen = pg.mkPen(qtg.QColor(255, 0, 0), width=3)
-        annrfthz_pen = pg.mkPen(qtg.QColor(255, 0, 255), width=3)
-        knnthz_pen = pg.mkPen(qtg.QColor(0, 255, 0), width=3)
+        nils_pen = pg.mkPen(qtg.QColor(*COLORS[0]), width=2)
+        lockmann_pen = pg.mkPen(qtg.QColor(*COLORS[1]), width=2)
+        annrf_pen = pg.mkPen(qtg.QColor(*COLORS[2]), width=2)
+        annthz_pen = pg.mkPen(qtg.QColor(*COLORS[3]), width=2)
+        annrfthz_pen = pg.mkPen(qtg.QColor(*COLORS[4]), width=2)
+        knnthz_pen = pg.mkPen(qtg.QColor(*COLORS[5]), width=2)
         
         self.addLegend()
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
