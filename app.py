@@ -575,6 +575,9 @@ class PeakPlot(pg.PlotWidget):
         
         self.bar = pg.BarGraphItem(x=np.arange(1024), height=np.zeros(1024), width=0.6, color="green")
         self.addItem(self.bar)
+
+        self.setLabel("bottom", text="Bunch")
+        self.setLabel("left", text="Peak Current", units="A")
     
     def update(self, peaks):
         peaks_scaled = peaks.copy()               # * 1e6
