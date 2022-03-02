@@ -1,7 +1,7 @@
-numpy
-pyqt5
-pyqtgraph
-scikit-learn==1.0
-scipy
-tensorflow==2.7.0
-matplotlib
+numpy==1.22.2
+pyqt5==5.15.6
+pyqtgraph==0.12.3
+scikit-learn==1.0.2
+scipy==1.8.0
+tensorflow==2.8.0
+matplotlib==3.5.1
