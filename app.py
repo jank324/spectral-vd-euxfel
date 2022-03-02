@@ -108,10 +108,18 @@ class ReadThread(qtc.QThread):
     def get_rf(self):
         facility = "XFEL.RF"
         device = "LLRF.CONTROLLER"
-        locations = ["VS.A1.I1", "VS.AH1.I1", "VS.A2.L1", "VS.A3.L2"]
+        locations = ["VS.A1.I1", "VS.AH1.I1", "VS.A2.L1"]
         properties = ["AMPL.SAMPLE", "PHASE.SAMPLE"]
 
-        rf = [pydoocs.read(f"{facility}/{device}/{l}/{p}")["data"] for l in locations for p in properties]
+        rf1 = [pydoocs.read(f"{facility}/{device}/{l}/{p}")["data"] for l in locations for p in properties]
+
+        rf2ampl = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/AMPL.SAMPLE")["data"] for module in range(3, 6)]
+        rf2phase = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/PHASE.SAMPLE")["data"] for module in range(3, 6)]
+
+        print(f"{rf2ampl = }")
+        print(f"{rf2ampl = }")
+
+        rf = rf1 + [np.sum(rf2ampl), np.mean(rf2phase)]
 
         return rf
 
