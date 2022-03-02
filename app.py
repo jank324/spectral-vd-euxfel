@@ -627,7 +627,7 @@ class App(qtw.QWidget):
         self.a1phi_label.setStyleSheet("font-weight: bold")
         self.a1phi_true = qtw.QLabel("-")
         self.a1phi_predict = qtw.QLabel("-")
-        self.ah1v_label = qtw.QLabel("A1H Voltage")
+        self.ah1v_label = qtw.QLabel("AH1 Voltage")
         self.ah1v_label.setStyleSheet("font-weight: bold")
         self.ah1v_true = qtw.QLabel("-")
         self.ah1v_predict = qtw.QLabel("-")
