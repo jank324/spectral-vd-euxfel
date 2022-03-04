@@ -116,9 +116,6 @@ class ReadThread(qtc.QThread):
         rf2ampl = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/AMPL.SAMPLE")["data"] for module in range(3, 6)]
         rf2phase = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/PHASE.SAMPLE")["data"] for module in range(3, 6)]
 
-        print(f"{rf2ampl = }")
-        print(f"{rf2ampl = }")
-
         rf = rf1 + [np.sum(rf2ampl), np.mean(rf2phase)]
 
         return rf
