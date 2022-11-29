@@ -1,8 +1,8 @@
+import sys
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-import sys
 from threading import Event
-import time
 
 import numpy as np
 import pydoocs
@@ -17,20 +17,21 @@ import nils.reconstruction_module as recon
 import nils.reconstruction_module_after_diss as adiss
 import spectralvd
 
-
 COLORS = [
     (138, 176, 207),
     (243, 182, 112),
     (188, 219, 120),
     (231, 133, 119),
     (179, 134, 185),
-    (253, 236, 130)
+    (253, 236, 130),
 ]
 
 
 class ReadThread(qtc.QThread):
 
-    new_raw_reading = qtc.pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray, float)
+    new_raw_reading = qtc.pyqtSignal(
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray, float
+    )
     new_clean_reading = qtc.pyqtSignal(np.ndarray, np.ndarray)
     new_rf_reading = qtc.pyqtSignal(np.ndarray)
     new_combined_reading = qtc.pyqtSignal(np.ndarray, np.ndarray, np.ndarray)
@@ -41,7 +42,7 @@ class ReadThread(qtc.QThread):
     def __init__(self, shots=10):
         super().__init__()
 
-        self.shot_frequency = 10    # Hz
+        self.shot_frequency = 10  # Hz
 
         self.rfs = deque(maxlen=shots)
         self.ffs = deque(maxlen=shots)
@@ -57,14 +58,16 @@ class ReadThread(qtc.QThread):
             rf, freqs, ff, ff_noise, detlim, charge, stage = self.read()
             self.new_raw_reading.emit(freqs, ff, ff_noise, detlim, charge)
 
-            freqs_clean, ff_clean, _ = recon.cleanup_formfactor(freqs, ff, ff_noise, detlim, channels_to_remove=[])
+            freqs_clean, ff_clean, _ = recon.cleanup_formfactor(
+                freqs, ff, ff_noise, detlim, channels_to_remove=[]
+            )
             self.new_clean_reading.emit(freqs_clean, ff_clean)
 
             self.new_rf_reading.emit(rf)
             self.new_combined_reading.emit(rf, freqs_clean, ff_clean)
 
             self.new_stage_reading.emit(stage)
-    
+
     def wait_for_next_shot(self):
         shot_dt = 1 / self.shot_frequency
 
@@ -73,13 +76,13 @@ class ReadThread(qtc.QThread):
         if t_remaining > 0:
             time.sleep(t_remaining)
         self.t_last = time.time()
-    
+
     def read(self):
         rf_future = self.executor.submit(self.get_rf)
         charge_future = self.executor.submit(self.get_charge)
         ff_future = self.executor.submit(self.get_formfactor)
         detlim_future = self.executor.submit(self.get_detlim)
-        
+
         rf = rf_future.result()
         charge = charge_future.result()
         freqs, ff_sq = ff_future.result()
@@ -98,41 +101,55 @@ class ReadThread(qtc.QThread):
         ff_noise = np.abs(0.5 / ff * ff_sq_noise)
 
         detlim_mean = np.sqrt(detlim * np.sqrt(10 / len(self.ffs)))
-        
+
         charge_mean = np.mean(self.charges)
 
         stage = crisp.get_stage_position()
 
         return rf_mean, freqs, ff, ff_noise, detlim_mean, charge_mean, stage
-    
+
     def get_rf(self):
         facility = "XFEL.RF"
         device = "LLRF.CONTROLLER"
         locations = ["VS.A1.I1", "VS.AH1.I1", "VS.A2.L1"]
         properties = ["AMPL.SAMPLE", "PHASE.SAMPLE"]
 
-        rf1 = [pydoocs.read(f"{facility}/{device}/{l}/{p}")["data"] for l in locations for p in properties]
+        rf1 = [
+            pydoocs.read(f"{facility}/{device}/{l}/{p}")["data"]
+            for l in locations
+            for p in properties
+        ]
 
-        rf2ampl = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/AMPL.SAMPLE")["data"] for module in range(3, 6)]
-        rf2phase = [pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/PHASE.SAMPLE")["data"] for module in range(3, 6)]
+        rf2ampl = [
+            pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/AMPL.SAMPLE")["data"]
+            for module in range(3, 6)
+        ]
+        rf2phase = [
+            pydoocs.read(f"{facility}/{device}/VS.A{module:d}.L2/PHASE.SAMPLE")["data"]
+            for module in range(3, 6)
+        ]
 
         rf = rf1 + [np.sum(rf2ampl), np.mean(rf2phase)]
 
         return rf
 
     def get_charge(self):
-        charge = pydoocs.read(self.crisp_channel + "CHARGE.TD")["data"][0,1] * 1e-9
+        charge = pydoocs.read(self.crisp_channel + "CHARGE.TD")["data"][0, 1] * 1e-9
         return charge
-    
+
     def get_formfactor(self):
-        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:,0] * 1e12
-        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][:,self.nbunch*2]
+        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:, 0] * 1e12
+        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][
+            :, self.nbunch * 2
+        ]
         return freqs, ff_sq
 
     def get_detlim(self):
-        detlim = pydoocs.read(self.crisp_channel + "FORMFACTOR_MEAN_DETECTLIMIT.XY")["data"][:,1]
+        detlim = pydoocs.read(self.crisp_channel + "FORMFACTOR_MEAN_DETECTLIMIT.XY")[
+            "data"
+        ][:, 1]
         return detlim
-    
+
     def set_nbunch(self, nbunch):
         self.nbunch = nbunch
 
@@ -156,31 +173,44 @@ class ReconstructionThread(qtc.QThread):
 
             s, current = self.reconstruct()
             self.new_reconstruction.emit(s, current)
-            
+
             self._new_crisp_reading_event.clear()
 
     def submit_reconstruction(self):
         raise NotImplementedError
-    
+
     def set_active(self, active_state):
         if active_state:
             self._active_event.set()
         else:
             self._active_event.clear()
-    
+
     def reconstruct(self):
         raise NotImplementedError
 
 
 class NilsThread(ReconstructionThread):
-
     def submit_reconstruction(self, freqs, ff, ff_noise, detlim, charge):
-        self.freqs, self.ff, self.ff_noise, self.detlim, self.charge = freqs, ff, ff_noise, detlim, charge
+        self.freqs, self.ff, self.ff_noise, self.detlim, self.charge = (
+            freqs,
+            ff,
+            ff_noise,
+            detlim,
+            charge,
+        )
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        reconstructed = adiss.master_recon(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge,
-                                           method="KKstart", channels_to_remove=[], show_plots=False)
+        reconstructed = adiss.master_recon(
+            self.freqs,
+            self.ff,
+            self.ff_noise,
+            self.detlim,
+            self.charge,
+            method="KKstart",
+            channels_to_remove=[],
+            show_plots=False,
+        )
         t, current = reconstructed[:2]
 
         s = t * constants.speed_of_light
@@ -189,18 +219,25 @@ class NilsThread(ReconstructionThread):
 
 
 class LockmANNThread(ReconstructionThread):
-
     def __init__(self, path):
         super().__init__()
 
         self.model = spectralvd.LockmANN.load(path)
 
     def submit_reconstruction(self, freqs, ff, ff_noise, detlim, charge):
-        self.freqs, self.ff, self.ff_noise, self.detlim, self.charge = freqs, ff, ff_noise, detlim, charge
+        self.freqs, self.ff, self.ff_noise, self.detlim, self.charge = (
+            freqs,
+            ff,
+            ff_noise,
+            detlim,
+            charge,
+        )
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge)]*2)
+        prediction = self.model.predict(
+            [(self.freqs, self.ff, self.ff_noise, self.detlim, self.charge)] * 2
+        )
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -209,7 +246,6 @@ class LockmANNThread(ReconstructionThread):
 
 
 class ANNRFThread(ReconstructionThread):
-
     def __init__(self, path):
         super().__init__()
 
@@ -218,9 +254,9 @@ class ANNRFThread(ReconstructionThread):
     def submit_reconstruction(self, rf):
         self.rf = rf
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([self.rf]*2)
+        prediction = self.model.predict([self.rf] * 2)
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -229,7 +265,6 @@ class ANNRFThread(ReconstructionThread):
 
 
 class KNNTHzThread(ReconstructionThread):
-
     def __init__(self, path):
         super().__init__()
 
@@ -238,9 +273,9 @@ class KNNTHzThread(ReconstructionThread):
     def submit_reconstruction(self, freqs, ff):
         self.freqs, self.ff = freqs, ff
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([(self.freqs, self.ff)]*2)
+        prediction = self.model.predict([(self.freqs, self.ff)] * 2)
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -249,7 +284,6 @@ class KNNTHzThread(ReconstructionThread):
 
 
 class ANNTHzThread(ReconstructionThread):
-
     def __init__(self, path):
         super().__init__()
 
@@ -258,9 +292,9 @@ class ANNTHzThread(ReconstructionThread):
     def submit_reconstruction(self, freqs, ff):
         self.freqs, self.ff = freqs, ff
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([(self.freqs, self.ff)]*2)
+        prediction = self.model.predict([(self.freqs, self.ff)] * 2)
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -269,7 +303,6 @@ class ANNTHzThread(ReconstructionThread):
 
 
 class ANNRFTHzThread(ReconstructionThread):
-
     def __init__(self, path):
         super().__init__()
 
@@ -278,9 +311,9 @@ class ANNRFTHzThread(ReconstructionThread):
     def submit_reconstruction(self, rf, freqs, ff):
         self.rf, self.freqs, self.ff = rf, freqs, ff
         self._new_crisp_reading_event.set()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([self.rf]*2, [(self.freqs,self.ff)]*2)
+        prediction = self.model.predict([self.rf] * 2, [(self.freqs, self.ff)] * 2)
 
         s = prediction[0][0]
         current = prediction[0][1]
@@ -313,21 +346,21 @@ class ReverseThread(qtc.QThread):
                 self.new_reversal.emit(predicted_rf)
             else:
                 self.active_state_changed.emit(self._active_event.is_set())
-            
+
             self._new_crisp_reading_event.clear()
 
     def submit_reversal(self, rf, freqs, ff):
         self.rf, self.freqs, self.ff = rf, freqs, ff
         self._new_crisp_reading_event.set()
-    
+
     def set_active(self, active_state):
         if active_state:
             self._active_event.set()
         else:
             self._active_event.clear()
-    
+
     def reconstruct(self):
-        prediction = self.model.predict([self.rf]*2, [(self.freqs,self.ff)]*2)
+        prediction = self.model.predict([self.rf] * 2, [(self.freqs, self.ff)] * 2)
         return prediction[0]
 
 
@@ -354,19 +387,19 @@ class PeakThread(ReadThread):
             peaks = self.model.predict(cleaned).squeeze()
 
             self.new_peaks.emit(peaks)
-    
+
     def set_active(self, active_state):
         if active_state:
             self._active_event.set()
         else:
             self._active_event.clear()
-    
+
     def read(self):
         rf_future = self.executor.submit(self.get_rf)
         charge_future = self.executor.submit(self.get_charge)
         ff_future = self.executor.submit(self.get_formfactor)
         detlim_future = self.executor.submit(self.get_detlim)
-        
+
         rf = rf_future.result()
         charge = charge_future.result()
         freqs, ff_sq = ff_future.result()
@@ -381,12 +414,12 @@ class PeakThread(ReadThread):
         n_bunches = ff_sq.shape[0]
 
         rf_mean = np.array(self.rfs).mean(axis=0)
-        rf_mean_all = np.repeat(rf_mean[np.newaxis,:], n_bunches, axis=0)
+        rf_mean_all = np.repeat(rf_mean[np.newaxis, :], n_bunches, axis=0)
 
-        freqs_all = np.repeat(freqs[np.newaxis,:], n_bunches, axis=0)
+        freqs_all = np.repeat(freqs[np.newaxis, :], n_bunches, axis=0)
 
-        ff_all = np.zeros((n_bunches,240))
-        ff_noise_all = np.zeros((n_bunches,240))
+        ff_all = np.zeros((n_bunches, 240))
+        ff_noise_all = np.zeros((n_bunches, 240))
         for i in range(n_bunches):
             ffs = [x[i] for x in self.ffs]
 
@@ -399,23 +432,27 @@ class PeakThread(ReadThread):
             ff_noise_all[i] = ff_noise
 
         detlim_mean = np.sqrt(detlim * np.sqrt(10 / len(self.ffs)))
-        detlim_all = np.repeat(detlim_mean[np.newaxis,:], n_bunches, axis=0)
-        
+        detlim_all = np.repeat(detlim_mean[np.newaxis, :], n_bunches, axis=0)
+
         charge_all = np.repeat(np.mean(self.charges), n_bunches)
 
         return rf_mean_all, freqs_all, ff_all, ff_noise_all, detlim_all, charge_all
 
     def get_formfactor(self):
-        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:,0] * 1e12
-        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][:,::2]
+        freqs = pydoocs.read(self.crisp_channel + "FORMFACTOR.XY")["data"][:, 0] * 1e12
+        ff_sq = pydoocs.read(self.crisp_channel + "FORMFACTOR.ARRAY")["data"][:, ::2]
         return freqs, ff_sq
-    
+
     def clean(self, freqs, ffs, ff_noise, detlim, charge):
-        return [(freqs_clean, ff_clean) for freqs_clean, ff_clean, _ in self.executor.map(recon.cleanup_formfactor, freqs, ffs, ff_noise, detlim, [[]]*len(ffs))]
+        return [
+            (freqs_clean, ff_clean)
+            for freqs_clean, ff_clean, _ in self.executor.map(
+                recon.cleanup_formfactor, freqs, ffs, ff_noise, detlim, [[]] * len(ffs)
+            )
+        ]
 
 
 class FormfactorPlot(pg.PlotWidget):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -423,22 +460,26 @@ class FormfactorPlot(pg.PlotWidget):
         pen_clean = pg.mkPen(qtg.QColor(*COLORS[1]), width=2)
 
         self.addLegend()
-        self.plot_crisp = self.plot(range(999), np.ones(999), pen=pen_crisp, name="CRISP")
-        self.plot_clean = self.plot(range(999), np.ones(999), pen=pen_clean, name="Cleaned")
+        self.plot_crisp = self.plot(
+            range(999), np.ones(999), pen=pen_crisp, name="CRISP"
+        )
+        self.plot_clean = self.plot(
+            range(999), np.ones(999), pen=pen_clean, name="Cleaned"
+        )
         self.setLogMode(x=True, y=True)
         self.setLabel("bottom", text="Frequency", units="Hz")
         self.setLabel("left", text="|Frequency|")
         self.showGrid(x=True, y=True)
 
         self.freqs_scaled = range(999)
-    
+
     def update(self, freqs, ff, ff_noise, detlim, charge):
-        self.freqs_scaled = freqs.copy() # np.log10(frequency)
+        self.freqs_scaled = freqs.copy()  # np.log10(frequency)
         self.ff_scaled = ff.copy()
         self.ff_scaled[self.ff_scaled <= 0] = 1e-3
 
         self.plot_crisp.setData(self.freqs_scaled, self.ff_scaled)
-    
+
     def update_clean(self, freqs, ff):
         ff_scaled = np.interp(self.freqs_scaled, freqs, ff)
 
@@ -446,26 +487,29 @@ class FormfactorPlot(pg.PlotWidget):
 
 
 class CurrentPlot(pg.PlotWidget):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         limit = 0.0001
         s = np.linspace(-limit, limit, 100)
-        
+
         nils_pen = pg.mkPen(qtg.QColor(*COLORS[0]), width=2)
         lockmann_pen = pg.mkPen(qtg.QColor(*COLORS[1]), width=2)
         annrf_pen = pg.mkPen(qtg.QColor(*COLORS[2]), width=2)
         annthz_pen = pg.mkPen(qtg.QColor(*COLORS[3]), width=2)
         annrfthz_pen = pg.mkPen(qtg.QColor(*COLORS[4]), width=2)
         knnthz_pen = pg.mkPen(qtg.QColor(*COLORS[5]), width=2)
-        
+
         self.addLegend()
         self.nils_plot = self.plot(s, np.zeros(100), pen=nils_pen, name="Nils")
-        self.lockmann_plot = self.plot(s, np.zeros(100), pen=lockmann_pen, name="LockmANN")
+        self.lockmann_plot = self.plot(
+            s, np.zeros(100), pen=lockmann_pen, name="LockmANN"
+        )
         self.annrf_plot = self.plot(s, np.zeros(100), pen=annrf_pen, name="ANN RF")
         self.annthz_plot = self.plot(s, np.zeros(100), pen=annthz_pen, name="ANN THz")
-        self.annrfthz_plot = self.plot(s, np.zeros(100), pen=annrfthz_pen, name="ANN RF+THz")
+        self.annrfthz_plot = self.plot(
+            s, np.zeros(100), pen=annrfthz_pen, name="ANN RF+THz"
+        )
         self.knnthz_plot = self.plot(s, np.zeros(100), pen=knnthz_pen, name="KNN THz")
         self.setXRange(-limit, limit)
         self.setYRange(0, 10e3)
@@ -479,49 +523,53 @@ class CurrentPlot(pg.PlotWidget):
         self._annthz_hidden = False
         self._annrfthz_hidden = False
         self._knnthz_hidden = False
-    
+
     def update_nils(self, s, current):
-        self.nils_s_scaled = s                # * 1e6
-        self.nils_current_scaled = current    # * 1e-3
+        self.nils_s_scaled = s  # * 1e6
+        self.nils_current_scaled = current  # * 1e-3
 
         if not self._nils_hidden:
             self.nils_plot.setData(self.nils_s_scaled, self.nils_current_scaled)
-    
+
     def update_lockmann(self, s, current):
-        self.lockmann_s_scaled = s                # * 1e6
-        self.lockmann_current_scaled = current    # * 1e-3
+        self.lockmann_s_scaled = s  # * 1e6
+        self.lockmann_current_scaled = current  # * 1e-3
 
         if not self._lockmann_hidden:
-            self.lockmann_plot.setData(self.lockmann_s_scaled, self.lockmann_current_scaled)
-    
+            self.lockmann_plot.setData(
+                self.lockmann_s_scaled, self.lockmann_current_scaled
+            )
+
     def update_annrf(self, s, current):
-        self.annrf_s_scaled = s                # * 1e6
-        self.annrf_current_scaled = current    # * 1e-3
+        self.annrf_s_scaled = s  # * 1e6
+        self.annrf_current_scaled = current  # * 1e-3
 
         if not self._annrf_hidden:
             self.annrf_plot.setData(self.annrf_s_scaled, self.annrf_current_scaled)
-    
+
     def update_annthz(self, s, current):
-        self.annthz_s_scaled = s                # * 1e6
-        self.annthz_current_scaled = current    # * 1e-3
+        self.annthz_s_scaled = s  # * 1e6
+        self.annthz_current_scaled = current  # * 1e-3
 
         if not self._annthz_hidden:
             self.annthz_plot.setData(self.annthz_s_scaled, self.annthz_current_scaled)
-    
+
     def update_annrfthz(self, s, current):
-        self.annrfthz_s_scaled = s                # * 1e6
-        self.annrfthz_current_scaled = current    # * 1e-3
+        self.annrfthz_s_scaled = s  # * 1e6
+        self.annrfthz_current_scaled = current  # * 1e-3
 
         if not self._annrfthz_hidden:
-            self.annrfthz_plot.setData(self.annrfthz_s_scaled, self.annrfthz_current_scaled)
-    
+            self.annrfthz_plot.setData(
+                self.annrfthz_s_scaled, self.annrfthz_current_scaled
+            )
+
     def update_knnthz(self, s, current):
-        self.knnthz_s_scaled = s                # * 1e6
-        self.knnthz_current_scaled = current    # * 1e-3
+        self.knnthz_s_scaled = s  # * 1e6
+        self.knnthz_current_scaled = current  # * 1e-3
 
         if not self._knnthz_hidden:
             self.knnthz_plot.setData(self.knnthz_s_scaled, self.knnthz_current_scaled)
-    
+
     def hide_nils(self, show):
         self._nils_hidden = not show
         if show:
@@ -529,15 +577,17 @@ class CurrentPlot(pg.PlotWidget):
         else:
             # self.nils_plot.clear()
             self.nils_plot.setData([], [])
-    
+
     def hide_lockmann(self, show):
         self._lockmann_hidden = not show
         if show:
-            self.lockmann_plot.setData(self.lockmann_s_scaled, self.lockmann_current_scaled)
+            self.lockmann_plot.setData(
+                self.lockmann_s_scaled, self.lockmann_current_scaled
+            )
         else:
             # self.lockmann_plot.clear()
             self.lockmann_plot.setData([], [])
-    
+
     def hide_annrf(self, show):
         self._annrf_hidden = not show
         if show:
@@ -545,7 +595,7 @@ class CurrentPlot(pg.PlotWidget):
         else:
             # self.annrf_plot.clear()
             self.annrf_plot.setData([], [])
-    
+
     def hide_annthz(self, show):
         self._annthz_hidden = not show
         if show:
@@ -553,15 +603,17 @@ class CurrentPlot(pg.PlotWidget):
         else:
             # self.annthz_plot.clear()
             self.annthz_plot.setData([], [])
-    
+
     def hide_annrfthz(self, show):
         self._annrfthz_hidden = not show
         if show:
-            self.annrfthz_plot.setData(self.annrfthz_s_scaled, self.annrfthz_current_scaled)
+            self.annrfthz_plot.setData(
+                self.annrfthz_s_scaled, self.annrfthz_current_scaled
+            )
         else:
             # self.annrfthz_plot.clear()
             self.annrfthz_plot.setData([], [])
-    
+
     def hide_knnthz(self, show):
         self._knnthz_hidden = not show
         if show:
@@ -572,25 +624,25 @@ class CurrentPlot(pg.PlotWidget):
 
 
 class PeakPlot(pg.PlotWidget):
-    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         pen = pg.mkPen(qtg.QColor(0, 128, 255), width=3)
-        
-        self.bar = pg.BarGraphItem(x=np.arange(1024), height=np.zeros(1024), width=0.6, color="green")
+
+        self.bar = pg.BarGraphItem(
+            x=np.arange(1024), height=np.zeros(1024), width=0.6, color="green"
+        )
         self.addItem(self.bar)
 
         self.setLabel("bottom", text="Bunch")
         self.setLabel("left", text="Peak Current", units="A")
-    
+
     def update(self, peaks):
-        peaks_scaled = peaks.copy()               # * 1e6
+        peaks_scaled = peaks.copy()  # * 1e6
         self.bar.setOpts(height=peaks_scaled)
 
 
 class App(qtw.QWidget):
-
     def __init__(self):
         super().__init__()
 
@@ -671,19 +723,33 @@ class App(qtw.QWidget):
         self.read_thread.new_clean_reading.connect(self.formfactor_plot.update_clean)
         self.read_thread.new_rf_reading.connect(self.update_rf_true)
         self.read_thread.new_raw_reading.connect(self.nils_thread.submit_reconstruction)
-        self.read_thread.new_raw_reading.connect(self.lockmann_thread.submit_reconstruction)
+        self.read_thread.new_raw_reading.connect(
+            self.lockmann_thread.submit_reconstruction
+        )
         self.read_thread.new_rf_reading.connect(self.annrf_thread.submit_reconstruction)
-        self.read_thread.new_clean_reading.connect(self.annthz_thread.submit_reconstruction)
-        self.read_thread.new_combined_reading.connect(self.annrfthz_thread.submit_reconstruction)
-        self.read_thread.new_clean_reading.connect(self.knnthz_thread.submit_reconstruction)
-        self.read_thread.new_combined_reading.connect(self.reverse_thread.submit_reversal)
+        self.read_thread.new_clean_reading.connect(
+            self.annthz_thread.submit_reconstruction
+        )
+        self.read_thread.new_combined_reading.connect(
+            self.annrfthz_thread.submit_reconstruction
+        )
+        self.read_thread.new_clean_reading.connect(
+            self.knnthz_thread.submit_reconstruction
+        )
+        self.read_thread.new_combined_reading.connect(
+            self.reverse_thread.submit_reversal
+        )
         self.read_thread.new_stage_reading.connect(self.update_stage_label)
-        
+
         self.nils_thread.new_reconstruction.connect(self.current_plot.update_nils)
-        self.lockmann_thread.new_reconstruction.connect(self.current_plot.update_lockmann)
+        self.lockmann_thread.new_reconstruction.connect(
+            self.current_plot.update_lockmann
+        )
         self.annrf_thread.new_reconstruction.connect(self.current_plot.update_annrf)
         self.annthz_thread.new_reconstruction.connect(self.current_plot.update_annthz)
-        self.annrfthz_thread.new_reconstruction.connect(self.current_plot.update_annrfthz)
+        self.annrfthz_thread.new_reconstruction.connect(
+            self.current_plot.update_annrfthz
+        )
         self.knnthz_thread.new_reconstruction.connect(self.current_plot.update_knnthz)
         self.reverse_thread.new_reversal.connect(self.update_rf_prediction)
         self.peak_thread.new_peaks.connect(self.peak_plot.update)
@@ -768,7 +834,7 @@ class App(qtw.QWidget):
         self.annrfthz_checkbox.setChecked(False)
         self.knnthz_checkbox.setChecked(False)
         self.peak_checkbox.setChecked(False)
-    
+
     def update_rf_true(self, rf):
         self.a1v_true.setText(f"Readback = {rf[0]:.2f}")
         self.a1phi_true.setText(f"Readback = {rf[1]:.2f}")
@@ -778,7 +844,7 @@ class App(qtw.QWidget):
         self.l1phi_true.setText(f"Readback = {rf[5]:.2f}")
         self.l2v_true.setText(f"Readback = {rf[6]:.2f}")
         self.l2phi_true.setText(f"Readback = {rf[7]:.2f}")
-    
+
     def update_rf_prediction(self, rf):
         self.a1v_predict.setText(f"DANN = {rf[0]:.2f}")
         self.a1phi_predict.setText(f"DANN = {rf[1]:.2f}")
@@ -788,7 +854,7 @@ class App(qtw.QWidget):
         self.l1phi_predict.setText(f"DANN = {rf[5]:.2f}")
         self.l2v_predict.setText(f"DANN = {rf[6]:.2f}")
         self.l2phi_predict.setText(f"DANN = {rf[7]:.2f}")
-    
+
     def show_reversed_rf(self, should_show):
         if not should_show:
             self.a1v_predict.setText(f"-")
@@ -799,25 +865,25 @@ class App(qtw.QWidget):
             self.l1phi_predict.setText(f"-")
             self.l2v_predict.setText(f"-")
             self.l2phi_predict.setText(f"-")
-    
+
     def start_crisp_refresh(self):
         if not hasattr(self, "crisp_refresh_executor"):
             self.crisp_refresh_executor = ThreadPoolExecutor(max_workers=1)
 
         self.crisp_refresh_executor.submit(self.refresh_crisp)
-    
+
     def refresh_crisp(self):
         if self.refresh_button.isEnabled:
             self.refresh_button.isEnabled = False
             crisp.update_crisp()
             self.refresh_button.isEnabled = True
-    
+
     def update_stage_label(self, stage):
         self.grating_label.setText(f"Grating = {stage}")
 
     def handle_application_exit(self):
         pass
-    
+
 
 if __name__ == "__main__":
     app = qtw.QApplication(sys.argv)
