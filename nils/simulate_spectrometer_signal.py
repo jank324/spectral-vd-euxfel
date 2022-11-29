@@ -7,17 +7,18 @@ s (m) and I (amps)
 
 @author: lockmann
 """
-import matplotlib.pylab as plt
 import numpy as np
 
 """
-simulate spectrometer
+Simulate spectrometer
 """
 
 
-def get_crisp_signal(s, current, n_shots=1, which_set="high"):
-    """Simulates the signal of the spectrometer of a single shot including the
-    noise of the spectrometer.
+def get_crisp_signal(
+    s: np.ndarray, current: np.ndarray, n_shots: int = 1, which_set: str = "high"
+) -> np.ndarray:
+    """
+    Simulate the signal of the spectrometer of a single shot including noise.
 
     Parameters
     ----------
@@ -30,31 +31,30 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
     which_set:  str, optional
                 Specifies the grating set of the spectrometer to use. Keep in
                 mind that experimentally you can only get one at a time.
-                Keywords are: 'high', 'low' and 'both'
+                Keywords are: "high", "low" and "both"
 
     Returns
-    ------
+    -------
     results :   float (array)
                 resulting electric field at distance r
     """
-    # center s so that 0 is in the middle
+    assert len(s) == len(current), "s and current must be the same length."
+
+    # Center s so that 0 is in the middle
     s_centered = s - np.sum(s * current) / np.sum(current)
-    # get charge
+    # Get charge
     t_in = s_centered / 3e8
     charge = np.trapz(current, x=t_in)
-    # linear time spacing
+    # Linear time spacing
     t_spec = np.arange(-2, 2, 0.001) * 1e-12
-    # needs to be sorted
+    # Needs to be sorted
     current = current[np.argsort(t_in)]
     t_in = np.sort(t_in)
     cur_spec = np.interp(t_spec, t_in, current, left=0, right=0)
-    # normalize to one
+    # Normalize to one
     cur_spec = cur_spec / np.trapz(cur_spec, x=t_spec)
 
-    # plt.figure('Normalized and intrapolated')
-    # plt.plot(t_spec*1e15,cur_spec*1e-3)
-
-    # fft
+    # FFT
     comp_ff = np.fft.fft(cur_spec)
     scale_factor = t_spec[1] - t_spec[0]
     comp_ff = comp_ff * scale_factor
@@ -62,12 +62,7 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
     comp_ff = comp_ff[freqs >= 0]
     freqs = freqs[freqs >= 0]
 
-    # plt.figure()
-    # plt.plot(freqs*1e-12,np.abs(comp_ff))
-    # plt.xscale('log')
-    # plt.yscale('log')
-
-    # interpolate to spectrometer range
+    # Interpolate to spectrometer range
     freqs_spectrometer = np.array(
         [
             6.84283010e11,
@@ -315,13 +310,8 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
 
     ff_spectrometer = np.interp(freqs_spectrometer, freqs, np.abs(comp_ff))
 
-    # plt.figure('Spectrometer Signal')
-    # plt.plot(freqs_spectrometer*1e-12, ff_spectrometer, 'o')
-    # plt.xscale('log')
-    # plt.yscale('log')
-
-    # add spectrometer noise
-    # response in V/nC²
+    # Add spectrometer noise
+    # Response in V/nC²
     spec_response = np.array(
         [
             2.27139720e-02,
@@ -567,11 +557,9 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
         ]
     )
 
-    # formfactor to adc-signal
+    # Formfactor to adc-signal
     adc_sig = ff_spectrometer**2 * (charge * 1e9) ** 2 * spec_response  # in V
-    # plt.figure('ADC Signal')
-    # plt.plot(adc_sig)
-    # add_noise
+    # Add_noise
     elec_noise = 1.2e-3  # V
     elec_noise = elec_noise / np.sqrt(n_shots)
     adc_noise = np.random.randn(np.size(ff_spectrometer)) * elec_noise
@@ -584,22 +572,14 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
         * np.sqrt(np.abs(adc_total) / spec_response)
         * np.sign(adc_total)
     )
-    # noise on form factor
+    # Noise on form factor
     ff_noise = (
         0.5 * final_ff * elec_noise * np.sqrt(n_shots) / adc_total
-    )  # fehlerfortpflanzung
+    )  # Fehlerfortpflanzung
     det_lim = (
         1 / (charge * 1e9) * np.sqrt(np.abs(elec_noise) / spec_response)
-    )  # noise floor
-    # plt.figure()
-    # plt.plot(freqs_spectrometer*1e-12, spec_response, 'o')
-    # plt.xscale('log')
-    # plt.yscale('log')
+    )  # Noise floor
 
-    # plt.figure('Spectrometer Signal')
-    # plt.plot(freqs_spectrometer*1e-12, final_ff, 'o')
-    # plt.xscale('log')
-    # plt.yscale('log')
     if which_set == "low":
         freqs_to_return = freqs_spectrometer[:120]
         ff_to_return = final_ff[:120]
@@ -616,6 +596,6 @@ def get_crisp_signal(s, current, n_shots=1, which_set="high"):
         det_lim = det_lim
         ff_noise = ff_noise
     else:
-        print("Keyword not known!")
+        raise ValueError(f"Invalid grating set: {which_set}")
 
     return np.array([freqs_to_return, ff_to_return, ff_noise, det_lim])

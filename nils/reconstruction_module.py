@@ -11,7 +11,6 @@ profile from a formfactor measurement
 import matplotlib.pylab as plt
 import numpy as np
 from scipy import interpolate
-from scipy.io import loadmat
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 
@@ -547,17 +546,16 @@ def norm_current(zeit, profil, charge):
 
 
 def cleanup_formfactor(
-    frequencies,
-    formfactors,
-    formfactors_noise,
-    formfactors_det_limit,
-    channels_to_remove=[104, 135],
-    wanted_time_res=2e-15,
-    wanted_time_frame=2e-12,
-    high_inter_last=1,
-    model_last_index=-1,
-    smooth_window=9,
-):
+    frequencies: np.ndarray,
+    formfactors: np.ndarray,
+    formfactors_noise: np.ndarray,
+    formfactors_det_limit: np.ndarray,
+    channels_to_remove: list[int] = [104, 135],
+    wanted_time_res: float = 2e-15,
+    wanted_time_frame: float = 2e-12,
+    high_inter_last: int=1,
+    smooth_window: int = 9,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     These function cleans up the form factor and interpolates it in frequency
     """
