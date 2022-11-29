@@ -12,5 +12,4 @@ __pycache__
 *.txt
 
 !requirements.txt
-!models/both_scalers.pkl
-!models/low_scalers.pkl
+!models
