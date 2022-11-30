@@ -91,46 +91,6 @@ def sort_data(frequencies, data_to_sort):
     return np.sort(frequencies), result
 
 
-# def remove_loners(sorted_frequencies,sorted_formfactors, sorted_noise, sorted_det_limit):
-#     """
-#     we don't want single channels to pop up in regions where there is not much signal.
-#     Therefore, we demand 4 neighbours above the significanc level and must not be nan
-
-#     BUT HOW DO I THEN HANDLE REGIONS WHERE THE FF IS CLEARLY UNDER THE DETECTION LIMIT?!
-#     -> in a similar way? where 4 are below the FF they should all be below?
-#     """
-#     new_sorted_formfactors = np.copy(sorted_formfactors)
-#     new_sorted_noise_plus = np.copy(sorted_noise)
-#     new_sorted_noise_minus = np.copy(sorted_noise)
-#     my_maske = np.ones(np.size(sorted_frequencies), dtype = 'bool')
-#     #Finde die letzten 4 zusammenhängen über Det-limit
-#     for channel in np.arange(np.size(sorted_formfactors)):
-#         this_values = sorted_formfactors[channel-2:channel+2]
-#         this_det_limits = sorted_det_limit[channel-2:channel+2]
-#         if np.any(this_values<this_det_limits) or np.any(np.isnan(this_values)):
-#             my_maske[channel] = False
-
-#     indices = np.arange(np.size(new_sorted_formfactors))[my_maske]
-#     new_sorted_formfactors[indices[-1]:] = np.nan
-#     #Und natürlich ueberall wo sonst unter detlim
-#     my_maske = np.ones(np.size(sorted_frequencies), dtype = 'bool')
-#     my_maske[indices[-1]:] = False
-#     my_maske[ sorted_formfactors<sorted_det_limit] = False
-#     # die ersten und letzten beiden sowieso
-#     my_maske[:2] = False
-#     my_maske[-2:] = False
-#     #kein FF >1 zulassen:
-#     new_sorted_formfactors[new_sorted_formfactors>1]= 1#oder
-#     #my_maske[sorted_formfactors>1]= False
-#     """
-#     Überall einen Fehler von mind. 5 prozent wegen justage etc.
-#     """
-#     mind_error  = 0.1*new_sorted_formfactors
-#     new_sorted_noise_plus[new_sorted_noise_plus< mind_error] = mind_error[new_sorted_noise_plus< mind_error]
-#     new_sorted_noise_minus[new_sorted_noise_minus< mind_error] = mind_error[new_sorted_noise_minus< mind_error]
-#     return sorted_frequencies[my_maske], new_sorted_formfactors[my_maske], new_sorted_noise_plus[my_maske], new_sorted_noise_minus[my_maske], my_maske
-
-
 def remove_loners(
     sorted_frequencies, sorted_formfactors, sorted_noise, sorted_det_limit
 ):
@@ -164,23 +124,13 @@ def remove_loners(
             hits = 0
         i = i + 1
     my_maske[i::] = False
-    """Finde die letzten 4 zusammenhängen über Det-limit""
-    new_maske = np.ones(np.size(sorted_frequencies), dtype = 'bool')
-    for channel in np.arange(np.size(sorted_formfactors)):
-        this_values = sorted_formfactors[channel-2:channel+2]
-        this_det_limits = sorted_det_limit[channel-2:channel+2]
-        if np.any(this_values<this_det_limits) or np.any(np.isnan(this_values)):
-            new_maske[channel] = False
-    indices = np.arange(np.size(new_sorted_formfactors))[new_maske]
-    my_maske[indices[-1]:] = False    
-    """
+    # Finde die letzten 4 zusammenhängen über Det-limit
+
     old_maske = my_maske
-    # my_maske = np.logical_or(my_maske,my_maske2)
     my_maske[:2] = False
     my_maske[-2:] = False
     # kein FF >1 zulassen:
     new_sorted_formfactors[new_sorted_formfactors > 1] = 1  # oder
-    # my_maske[sorted_formfactors>1]= False
     """
     Überall einen Fehler von mind. 10 prozent wegen justage etc.
     """
@@ -199,65 +149,6 @@ def remove_loners(
         new_sorted_noise_minus[my_maske],
         old_maske,
     )
-
-
-# def remove_outliers(sorted_formfactors, n_neighbours = 3):
-#    """
-#    Check for unphysical jumps, if the values change more than 0.5/2 in the
-#    neighbours range, the data point is removed
-#    """
-#    channels = np.arange(np.size(sorted_formfactors))[::-1]
-#    changes= sorted_formfactors[1:]/sorted_formfactors[:-1]
-#    low_jumps = channels[changes<0.5]
-#    high_jumps = channels[changes>2.]
-#    distances = n
-
-# def extrapolation_low(new_frequencies, sorted_frequencies, sorted_formfactors, sorted_formfactor_noise_plus, sorted_formfactor_noise_minus):
-#     """
-#     Extrapolation to low Frequencies. Gaussian to last 30 significant points
-#     Question: Allow Formfactors bigger than 1? -> No
-#     """
-#     #if form factor measured above 0.6, fitte und ersatze alles über 0.7. andernfalls fuehre nur fort
-#     n_channels = np.arange(5,20)
-#     if np.mean(sorted_formfactors[n_channels])>0.7:
-#         fit_freqs, fit_formfactors = sorted_frequencies[sorted_frequencies>0.4], sorted_formfactors[sorted_frequencies>0.4]
-#         #zu den sample points noch die 1 bei 0 hinzufügen!
-#         sampoints = np.append(np.array([0]),fit_freqs)
-#         datapoints = np.append(np.array([1]), fit_formfactors)
-#         data,pcov = curve_fit(gauss, sampoints, datapoints,p0 = 10e12)
-#         my_gauss = gauss(sorted_frequencies, data)
-#         #>0.7 austauzscgeb
-#         to_replace = my_gauss>0.6 # indices des alten f-grids die zu erusetzen sind
-#         last_freq  = sorted_frequencies[to_replace][-1]
-#         add_freqs =  new_frequencies[new_frequencies<last_freq]
-#         add_ff = gauss(add_freqs, data)
-
-#         new_freqs = np.append(add_freqs, sorted_frequencies[sorted_frequencies>last_freq])
-#         new_formfactors = np.append(add_ff, sorted_formfactors[sorted_frequencies>last_freq])
-#         new_noise_plus =  np.append(np.zeros(np.size(add_ff)), sorted_formfactor_noise_plus[sorted_frequencies>last_freq])
-#         new_noise_minus =  np.append(np.zeros(np.size(add_ff)), sorted_formfactor_noise_minus[sorted_frequencies>last_freq])
-
-#     else:
-#         fit_freqs, fit_formfactors = sorted_frequencies[n_channels], sorted_formfactors[n_channels]
-#         #zu den sample points noch die 1 bei 0 hinzufügen!
-#         sampoints = np.append(np.array([0]),fit_freqs)
-#         datapoints = np.append(np.array([1]), fit_formfactors)
-#         #get chebyshev coefficients
-#         data,pcov = curve_fit(gauss, sampoints, datapoints,p0 = 10e12)
-#         #get extrapolation on new grid
-#         new_low_freqs = new_frequencies[new_frequencies<fit_freqs[-1]]
-#         my_low_cheb = gauss(new_low_freqs, data)
-#         #plt.figure()
-#         #plt.plot(new_low_freqs*1e-12, my_low_cheb)
-#         #füge das an das alte frequenzgitter an
-#         add_freqs =  new_low_freqs[new_low_freqs<sorted_frequencies[0]]
-#         add_ff = my_low_cheb[new_low_freqs<sorted_frequencies[0]]
-
-#         new_freqs = np.append(add_freqs, sorted_frequencies)
-#         new_formfactors = np.append(add_ff, sorted_formfactors)
-#         new_noise_plus =  np.append(np.zeros(np.size(add_ff)), sorted_formfactor_noise_plus)
-#         new_noise_minus =  np.append(np.zeros(np.size(add_ff)), sorted_formfactor_noise_minus)
-#     return new_freqs, new_formfactors, new_noise_plus, new_noise_minus
 
 
 def extrapolation_low(
@@ -287,8 +178,7 @@ def extrapolation_low(
     # get extrapolation on new grid
     new_low_freqs = new_frequencies[new_frequencies < fit_freqs[-1]]
     my_low_cheb = gauss(new_low_freqs, data)
-    # plt.figure()
-    # plt.plot(new_low_freqs*1e-12, my_low_cheb)
+
     # füge das an das alte frequenzgitter an
     add_freqs = new_low_freqs[new_low_freqs < sorted_frequencies[0]]
     add_ff = my_low_cheb[new_low_freqs < sorted_frequencies[0]]
@@ -397,7 +287,7 @@ def get_timing_grid(sign_frequencies, sign_formfactors):
     dfreqs = sign_frequencies[center] / 5
     # und wir machen mal 1024 messpunkte
     freq_max = 1024 * dfreqs
-    # print(str(1/dfreqs)  )
+
     return 1 / dfreqs, 1 / freq_max
 
 
@@ -493,7 +383,6 @@ def ff_from_model(model, freqs, modelparas):
     """
     Returns the normalised imaginary formfactor of the model
     """
-    # print( model )
     global wx
     zeit = np.fft.fftfreq(2 * np.size(freqs) - 1, d=freqs[1] - freqs[0])
     zeit = np.sort(zeit)
@@ -503,13 +392,10 @@ def ff_from_model(model, freqs, modelparas):
         zeitdom = model(zeit, modelparas)
     # normalize to densitiy 1
     zeitdom = zeitdom / np.trapz(zeitdom, x=zeit)
-    # print (modelparas)
-    # zeitdom= model(zeit, *[modelparas])
-    # ff_model = np.fft.fft(zeitdom)
+
     wx, ff_model = nils_fft(zeit, zeitdom)
     ff_model = ff_model[: np.size(freqs)] * np.sqrt(2 * np.pi)
-    # ff_abs_model = np.abs(ff_model)
-    # ff_model = ff_model / ff_abs_model[0]
+
     return ff_model
 
 
@@ -518,7 +404,6 @@ def fit_model(modeldata, freqs, formfactors, highest_freq):
     Function to fit a model such that the formfactor modulus fits best to the
     data up to highest freq
     """
-    # global model, model_guess
     model = modeldata[0]
     model_guess = modeldata[1]
     if np.size(model_guess) == 2:
@@ -542,9 +427,6 @@ def fit_model(modeldata, freqs, formfactors, highest_freq):
     )
 
     # Get goodness of fit
-    # if np.size(popt) ==2:
-    #    resulting_ff_abs = np.abs(ff_from_model(model, freqs_to_fit, popt[0], popt[1]))
-    # else:
     resulting_ff_abs = np.abs(ff_from_model(model, freqs_to_fit, popt))
     criterium = np.sum((resulting_ff_abs - formfactors_to_fit) ** 2)
     return criterium, popt
@@ -595,12 +477,9 @@ def gerchberg_saxton(
         all_iterations = []
     n = 0
     nmax = 20
-    # while n<nmax:
     not_converged = True
     while not_converged:
-        # print(difference)
-        # print(n)
-        # while difference > phase_condition:
+        print(n)
         prev_phase = np.copy(seed_phase)
         # Nur Formfaktoren austauschen, die nicht im Rauschen liegen
         new_formfactor = np.abs(new_formfactor)
@@ -611,10 +490,10 @@ def gerchberg_saxton(
             and np.logical_not(np.any(bools_too_low))
             and np.logical_not(np.any(bools_too_high))
         ):
-            # print('Convergiert: ' + str(n))
+            print("Convergiert: " + str(n))
             not_converged = False
         if n > 20:
-            # print('stopped trying at n=' + str(n))
+            print("stopped trying at n=" + str(n))
             not_converged = False
         new_formfactor[bools_too_low] = formfactors[bools_too_low]
         new_formfactor[bools_too_high] = formfactors[bools_too_high]
@@ -633,9 +512,7 @@ def gerchberg_saxton(
             this_curr_prof,
             -int(np.argmax(this_curr_prof) - np.size(this_curr_prof) / 2),
         )
-        # plt.figure('Iteration')
-        # plt.plot(this_curr_prof, label = str(n))
-        # plt.legend()
+
         """"Abruchbed.!"""
         # Stromprofileabweichungen darf maximal 1 % des maximum sein!
         # begin_cur_prof noch altes vor constraints
@@ -645,7 +522,6 @@ def gerchberg_saxton(
             all_iterations.append(begin_curr_prof)  # alle iteration vorm verschönern.
         # Error-Reduction-Method: Set to 0 where violating
         # a) negative charges
-        # violation = np.any(this_curr_prof<-1e-2)
         this_curr_prof[this_curr_prof < 0] = 0
         # b) zusammenhängend
         # get rid of postoscillations...
@@ -680,26 +556,17 @@ def gerchberg_saxton(
         new_formfactor = new_formfactor * np.sqrt(2 * np.pi)
         new_formfactor = new_formfactor[: int((np.size(new_formfactor) + 1) / 2)]
         seed_phase = np.angle(new_formfactor)
-        # difference = np.sum(np.abs(seed_phase-prev_phase)**2)
-        # difference = np.sum(np.abs(np.abs(new_formfactor[:20])-np.abs(inter_formfactors)))
+
         # Wenn ich so aufhöre, stimmt der Formfakor bei hohen Frequenzen nicht mehr überein:
-        # if difference <=phase_condition:
-        # if n == nmax-1:
+
         if np.logical_not(not_converged):
             clean_curr_prof = np.copy(this_curr_prof)  # mit Cleanup
             this_curr_prof = begin_curr_prof  # ohne Clean up
             x = np.arange(np.size(this_curr_prof))
-            # outcommented this
-            # this_curr_prof = this_curr_prof /np.trapz(this_curr_prof, x = x)
-            # new_formfactor = np.fft.fft(this_curr_prof)
-            # wx, new_formfactor = nils_fft(x,this_curr_prof)
-            # new_formfactor = new_formfactor * np.sqrt(2*np.pi)
-            # new_formfactor = new_formfactor[:int((np.size(new_formfactor)+1)/2)]
+
         n = n + 1
 
-    # this_curr_prof = np.roll(this_curr_prof, - int(np.argmax(this_curr_prof)-np.size(this_curr_prof)/2))
     # center fine
-    # center = first_moment(this_curr_prof, np.arange(np.size(this_curr_prof)))
     center = first_moment(clean_curr_prof, np.arange(np.size(clean_curr_prof)))
     final_curr_prof = np.roll(
         this_curr_prof, -int(center - np.size(this_curr_prof) / 2)
@@ -752,8 +619,7 @@ def model_start(
         2 * np.size(frequencies) - 1, d=frequencies[1] - frequencies[0]
     )
     zeit = np.sort(zeit)
-    # tmax = 1/(frequencies[0]-frequencies[1])
-    # zeit = tmax*np.linspace(-1/2,1/2,np.size(frequencies))
+
     start_phase = np.angle(model_ff)
     if give_all_iterations == True:
         time_domain, all_iterations = gerchberg_saxton(
@@ -833,7 +699,6 @@ def master_recon(
         min_freq = sign_frequencies[0]
         max_freq = sign_frequencies[-1]
         wanted_time_frame, wanted_time_res = 1 / min_freq, 1 / max_freq
-    # print (wanted_time_frame*1e12)
     # New FrequencyGrid
     freq_d = 1 / wanted_time_frame
     freq_max = 1 / wanted_time_res
@@ -934,11 +799,9 @@ def master_recon(
     current = norm_current(recon_time, recon_prof, charge)
 
     # get formfactor of reconstruction
-    # wx, recon_ff = nils_fft(recon_time,current/charge)
     wx, recon_ff = nils_fft(np.arange(np.size(recon_time)), recon_prof)
     recon_ff = recon_ff * np.sqrt(2 * np.pi)
     recon_ff = recon_ff[: int((np.size(recon_ff) + 1) / 2)]
-    # recon_ff = np.abs(recon_ff)
 
     # RMS Time Value
     t_rms = np.sqrt(np.abs(second_moment(current, recon_time)))
@@ -999,7 +862,6 @@ def master_recon(
         axes[1].set_xlabel("t (fs)")
         axes[1].set_ylabel("I (kA)")
         axes[1].set_xlim([-10 * t_rms * 1e15, 10 * t_rms * 1e15])
-        # axes[1].set_xlim([-200,200])
         axes[1].legend()
         fig.tight_layout()
 

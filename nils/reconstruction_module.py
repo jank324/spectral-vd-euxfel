@@ -58,7 +58,6 @@ def nils_fft(xin, datain):
     quatschfaktor = 1 / np.sqrt(2.0 * np.pi) * (xin[1] - xin[0])
     fouriertransform = quatschfaktor * fouriertransform
     fx = np.fft.fftfreq(np.size(xin), d=xin[1] - xin[0])
-    # fx = sort(fx)
     wx = 2 * np.pi * fx
     return wx, fouriertransform
 
@@ -77,7 +76,7 @@ def remove_certain_channels(channel_list, dataset):
     return new_data
 
 
-def sort_data(frequencies, data_to_sort):
+def sort_data(frequencies: np.ndarray, data_to_sort):
     """
     Sort data according to frequency. Very important for everything to come.
     """
@@ -112,27 +111,17 @@ def remove_loners(
         sorted_formfactors[my_maske],
         sorted_noise[my_maske],
     )
-    # return sorted_frequencies, new_sorted_formfactors, new_sorted_noise
-
-
-# def remove_outliers(sorted_formfactors, n_neighbours = 3):
-#    """
-#    Check for unphysical jumps, if the values change more than 0.5/2 in the
-#    neighbours range, the data point is removed
-#    """
-#    channels = np.arange(np.size(sorted_formfactors))[::-1]
-#    changes= sorted_formfactors[1:]/sorted_formfactors[:-1]
-#    low_jumps = channels[changes<0.5]
-#    high_jumps = channels[changes>2.]
-#    distances = n
 
 
 def extrapolation_low(
-    new_frequencies, sorted_frequencies, sorted_formfactors, sorted_formfactor_noise
-):
+    new_frequencies: np.ndarray,
+    sorted_frequencies: np.ndarray,
+    sorted_formfactors: np.ndarray,
+    sorted_formfactor_noise: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Extrapolation to low Frequencies. As soon as 3 channels have a formfactor bigger than ff_value,
-    A Gaussian function will be fitted and this data replaced by the fit.
+    Extrapolation to low Frequencies. As soon as 3 channels have a formfactor bigger
+    than ff_value, a Gaussian function will be fitted and this data replaced by the fit.
     Question: Allow Formfactors bigger than 1? -> No
     """
 
@@ -152,11 +141,9 @@ def extrapolation_low(
     i = 1
     while n_hits < 2:
         if smallff_channels[i] == smallff_channels[i - 1] + 1:
-            # print(smallff_channels[i])
             n_hits = n_hits + 1
         else:
             n_hits = 0
-        # print(n_hits)
         i = i + 1
     n_channels_tmp = smallff_channels[i]
     # Long Bunches:
@@ -164,17 +151,14 @@ def extrapolation_low(
         n_channels = 60
     else:
         n_channels = n_channels_tmp
-    # print('stopped at ' + str(sorted_frequencies[n_channels]*1e-12))
-    # n_channels = np.amax(channels[sorted_formfactors>0.8])
+
     fit_freqs, fit_formfactors = (
         sorted_frequencies[:n_channels],
         sorted_formfactors[:n_channels],
     )
     guess = 1e12
     popt, pcov = curve_fit(gauss, fit_freqs, fit_formfactors, p0=guess)
-    # guess_width = np.sqrt(-sorted_frequencies[n_channels]**2/ 2 / np.log(sorted_formfactors[n_channels]))
-    # guess = np.array([1,guess_width])
-    # popt, pcov = curve_fit(gauss_wamp, fit_freqs, fit_formfactors, p0 = guess)
+
     # for long bunches to only extrapolate but not replace:
     if n_channels_tmp < 4:
         n_channels = 0
@@ -306,7 +290,6 @@ def ff_from_model(model, freqs, modelparas):
     """
     Returns the normalised imaginary formfactor of the model
     """
-    # print( model )
     global wx
     zeit = np.fft.fftfreq(2 * np.size(freqs) - 1, d=freqs[1] - freqs[0])
     zeit = np.sort(zeit)
@@ -316,13 +299,10 @@ def ff_from_model(model, freqs, modelparas):
         zeitdom = model(zeit, modelparas)
     # normalize to densitiy 1
     zeitdom = zeitdom / np.trapz(zeitdom, x=zeit)
-    # print (modelparas)
-    # zeitdom= model(zeit, *[modelparas])
-    # ff_model = np.fft.fft(zeitdom)
+
     wx, ff_model = nils_fft(zeit, zeitdom)
     ff_model = ff_model[: np.size(freqs)] * np.sqrt(2 * np.pi)
-    # ff_abs_model = np.abs(ff_model)
-    # ff_model = ff_model / ff_abs_model[0]
+
     return ff_model
 
 
@@ -331,7 +311,7 @@ def fit_model(modeldata, freqs, formfactors, highest_freq):
     Function to fit a model such that the formfactor modulus fits best to the
     data up to highest freq
     """
-    # global model, model_guess
+
     model = modeldata[0]
     model_guess = modeldata[1]
     if np.size(model_guess) == 2:
@@ -355,9 +335,6 @@ def fit_model(modeldata, freqs, formfactors, highest_freq):
     )
 
     # Get goodness of fit
-    # if np.size(popt) ==2:
-    #    resulting_ff_abs = np.abs(ff_from_model(model, freqs_to_fit, popt[0], popt[1]))
-    # else:
     resulting_ff_abs = np.abs(ff_from_model(model, freqs_to_fit, popt))
     criterium = np.sum((resulting_ff_abs - formfactors_to_fit) ** 2)
     return criterium, popt
@@ -424,18 +401,14 @@ def gerchberg_saxton(
             this_curr_prof,
             -int(np.argmax(this_curr_prof) - np.size(this_curr_prof) / 2),
         )
-        # plt.figure('Iteration')
-        # plt.plot(this_curr_prof, label = str(n))
-        # plt.legend()
+
         begin_curr_prof = np.copy(this_curr_prof)
         # Error-Reduction-Method: Set to 0 where violating
         # a) negative charges
-        # violation = np.any(this_curr_prof<-1e-2)
+
         this_curr_prof[this_curr_prof < 0] = 0
         # b) being larger than 1ps
-        # center = first_moment(this_curr_prof, zeit)
-        # this_curr_prof[:100] = 0
-        # this_curr_prof[-100:] = 0
+
         # c) zusammenhängend
         # get rid of postoscillations...
         # check low
@@ -454,39 +427,32 @@ def gerchberg_saxton(
         this_curr_prof[int(high_index) :] = 0
         # ..done
 
-        # plt.plot(this_curr_prof, label=step)
         # FFT to get new phase in time domain
         x = np.arange(np.size(this_curr_prof))
         """
         Change here
         """
-        this_curr_prof = this_curr_prof  # /np.trapz(this_curr_prof, x = x)
+        this_curr_prof = this_curr_prof
         """
         """
-        # new_formfactor = np.fft.fft(this_curr_prof)
+
         wx, new_formfactor = nils_fft(x, this_curr_prof)
         new_formfactor = new_formfactor * np.sqrt(2 * np.pi)
         new_formfactor = new_formfactor[: int((np.size(new_formfactor) + 1) / 2)]
         seed_phase = np.angle(new_formfactor)
         difference = np.sum(np.abs(seed_phase - prev_phase) ** 2)
-        # difference = np.sum(np.abs(np.abs(new_formfactor[:20])-np.abs(inter_formfactors)))
+
         # Wenn ich so aufhöre, stimmt der Formfakor bei hohen Frequenzen nicht mehr überein:
-        # if difference <=phase_condition:
+
         if n == nmax - 1:
             clean_curr_prof = np.copy(this_curr_prof)  # mit Cleanup
             this_curr_prof = begin_curr_prof  # ohne Clean up
             x = np.arange(np.size(this_curr_prof))
-            # outcommented this
-            # this_curr_prof = this_curr_prof /np.trapz(this_curr_prof, x = x)
-            # new_formfactor = np.fft.fft(this_curr_prof)
-            # wx, new_formfactor = nils_fft(x,this_curr_prof)
-            # new_formfactor = new_formfactor * np.sqrt(2*np.pi)
-            # new_formfactor = new_formfactor[:int((np.size(new_formfactor)+1)/2)]
+
         n = n + 1
 
-    # this_curr_prof = np.roll(this_curr_prof, - int(np.argmax(this_curr_prof)-np.size(this_curr_prof)/2))
     # center fine
-    # center = first_moment(this_curr_prof, np.arange(np.size(this_curr_prof)))
+
     center = first_moment(clean_curr_prof, np.arange(np.size(clean_curr_prof)))
     final_curr_prof = np.roll(
         this_curr_prof, -int(center - np.size(this_curr_prof) / 2)
@@ -529,8 +495,7 @@ def model_start(frequencies, model_ff, mess_formfactors, mess_formfactors_noise)
         2 * np.size(frequencies) - 1, d=frequencies[1] - frequencies[0]
     )
     zeit = np.sort(zeit)
-    # tmax = 1/(frequencies[0]-frequencies[1])
-    # zeit = tmax*np.linspace(-1/2,1/2,np.size(frequencies))
+
     start_phase = np.angle(model_ff)
     time_domain = gerchberg_saxton(
         mess_formfactors, mess_formfactors_noise, start_phase
@@ -553,7 +518,7 @@ def cleanup_formfactor(
     channels_to_remove: list[int] = [104, 135],
     wanted_time_res: float = 2e-15,
     wanted_time_frame: float = 2e-12,
-    high_inter_last: int=1,
+    high_inter_last: int = 1,
     smooth_window: int = 9,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -662,12 +627,9 @@ def master_recon(
         start_ff = find_best_modelff(
             modellist, new_freqs, final_ff, sign_frequencies[model_last_index]
         )
-        # return start_ff
     elif method == "KKstart":
-        # print('Drin')
         kk_phase = kramers_kronig_phase(new_freqs, final_ff)
         start_ff = final_ff * np.exp(kk_phase * complex(0, 1))
-        # return start_ff
     else:
         print("Method not defined")
     if phase_noise_start != None:
@@ -746,7 +708,6 @@ def master_recon(
         axes[1].set_xlabel("t (fs)")
         axes[1].set_ylabel("I (kA)")
         axes[1].set_xlim([-10 * t_rms * 1e15, 10 * t_rms * 1e15])
-        # axes[1].set_xlim([-200,200])
         axes[1].legend()
         fig.tight_layout()
 
