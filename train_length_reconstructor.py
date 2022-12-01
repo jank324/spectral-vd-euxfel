@@ -8,7 +8,7 @@ import torch
 from sklearn.preprocessing import MinMaxScaler
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 
 from .utils import current2formfactor
 
@@ -170,14 +170,7 @@ class ShapeReconstructionDataset(Dataset):
 class LengthReconstructor(pl.LightningModule):
     """Neural networks for reconstructing currents at EuXFEL."""
 
-    def __init__(
-        self,
-        rf_ext_layers: list[int] = [24, 24],
-        thz_ext_layers: list[int] = [24, 48],
-        encoder_layers: list[int] = [24],
-        latent_dim: int = 12,
-        decoder_layers: list[int] = [24, 48],
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
         self.mlp = nn.Sequential(
@@ -218,3 +211,20 @@ class LengthReconstructor(pl.LightningModule):
         mae = F.l1_loss(predictions, bunch_lengths)
         self.log("train_mae", mae)
         return loss
+
+
+def main() -> None:
+    dataset = LengthReconstructionDataset("data/zihan/data_20220905.pkl")
+    train_dataset, val_dataset = random_split(dataset, [0.8, 0.2])
+
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=64)
+
+    model = LengthReconstructor()
+
+    trainer = pl.Trainer()
+    trainer.fit(model, train_loader, val_loader)
+
+
+if __name__ == "__main__":
+    main()
