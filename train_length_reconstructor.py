@@ -7,6 +7,7 @@ import pytorch_lightning as pl
 import torch
 from sklearn.preprocessing import MinMaxScaler
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import Dataset
 
 from .utils import current2formfactor
@@ -166,7 +167,7 @@ class ShapeReconstructionDataset(Dataset):
         return (rf_setting, formfactor), current
 
 
-class ANNCurrentReconstructor(pl.LightningModule):
+class LengthReconstructor(pl.LightningModule):
     """Neural networks for reconstructing currents at EuXFEL."""
 
     def __init__(
@@ -179,32 +180,41 @@ class ANNCurrentReconstructor(pl.LightningModule):
     ) -> None:
         super().__init__()
 
-        self.rf_extractor = nn.Sequential(
-            nn.Linear(5, 24),
+        self.mlp = nn.Sequential(
+            nn.Linear(5 + 300, 200),
             nn.ReLU(),
-            nn.Linear(24, 24),
+            nn.Linear(200, 100),
+            nn.ReLU(),
+            nn.Linear(100, 50),
+            nn.ReLU(),
+            nn.Linear(50, 1),
             nn.ReLU(),
         )
-        self.thz_extractor = nn.Sequential(
-            nn.Conv1d(1, 24, kernel_size=10),
-            nn.ReLU(),
-            nn.Conv1d(24, 48, kernel_size=10),
-            nn.ReLU(),
-            nn.Flatten(),
-        )
 
-        self.encoder = nn.Sequential(
-            nn.Linear(100, 24), nn.ReLU(), nn.Linear(24, 12), nn.ReLU()
-        )
+    def forward(
+        self, rf_settings: torch.Tensor, formfactors: torch.Tensor
+    ) -> torch.Tensor:
+        concatenated = torch.concat([rf_settings, formfactors])
+        bunch_length = self.mlp(concatenated)
+        return bunch_length
 
-        self.length_decoder = nn.Sequential()
-        self.current_decoder = nn.Sequential()
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-    def forward(self, rfs, formfactors):
-        rf_features = self.rf_extractor(rfs)
-        formfactor_features = self.thz_extractor(formfactors)
-        features = torch.concat(rf_features, formfactor_features)
-        latent = self.encoder(features)
-        length = self.length_decoder(latent)
-        current = self.current_decoder(latent)
-        return length, current
+    def training_step(self, train_batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        (rf_settings, formfactors), bunch_lengths = train_batch
+        predictions = self.forward(rf_settings, formfactors)
+        loss = F.mse_loss(predictions, bunch_lengths)
+        self.log("train_loss", loss)
+        mae = F.l1_loss(predictions, bunch_lengths)
+        self.log("train_mae", mae)
+        return loss
+
+    def validation_step(self, val_batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        (rf_settings, formfactors), bunch_lengths = val_batch
+        predictions = self.forward(rf_settings, formfactors)
+        loss = F.mse_loss(predictions, bunch_lengths)
+        self.log("train_loss", loss)
+        mae = F.l1_loss(predictions, bunch_lengths)
+        self.log("train_mae", mae)
+        return loss
