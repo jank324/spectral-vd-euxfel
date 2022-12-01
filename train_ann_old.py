@@ -95,43 +95,75 @@ class ShapeReconstructionDataset(Dataset):
     Dataset for reconstructing the bunch shape from RF settings and the THz spectrum.
     """
 
-    def __init__(self, path: Union[Path, str]) -> None:
-        pass
+    def __init__(
+        self,
+        path: Union[Path, str],
+        normalize_rf: bool = True,
+        normalize_formfactors: bool = True,
+        normalize_currents: bool = True,
+    ) -> None:
+        self.normalize_rf = normalize_rf
+        self.normalize_formfactors = normalize_formfactors
+        self.normalize_currents = normalize_currents
 
+        self.rf_settings, self.formfactors, self.currents = self.load_data(path)
 
-class CurrentReconstructionDataset(Dataset):
-    """Dataset for training a neural network on current reconstruction at EuXFEL."""
+        if self.normalize_rf:
+            self.rf_scaler = MinMaxScaler().fit(self.rf_settings)
+        if self.normalize_formfactors:
+            self.formfactor_scaler = MinMaxScaler().fit(self.formfactors)
+        if self.normalize_currents:
+            self.current_scaler = MinMaxScaler().fit(self.currents)
 
-    def __init__(self, path: Union[Path, str]) -> None:
+    def load_data(
+        self, path: Union[Path, str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Load data saved at `path` from disk and return the parts of it relevant to this
+        dataset.
+        """
         path = Path(path) if isinstance(path, str) else path
 
         df = pd.read_pickle(path)
+        rf_settings = df[["chirp", "chirpL1", "chirpL2", "curv", "skew"]].values
 
-        self.rfs_dataset = df[["chirp", "chirpL1", "chirpL2", "curv", "skew"]].values
-
-        ss_dataset = np.stack(
+        ss = np.stack(
             [np.linspace(0, 300 * df.loc[i, "slice_width"], num=300) for i in df.index]
         )
-        self.lengths = ss_dataset.max(axis=1) - ss_dataset.min()
+        currents = np.stack(df["slice_I"].values)
 
-        self.currents_dataset = np.stack(df["slice_I"].values)
-
-        self.formfactors_dataset = np.array(
+        formfactors = np.array(
             [
                 current2formfactor(
                     ss, currents, grating="both", n_shots=1, clean=False
                 )[1]
-                for ss, currents in zip(ss_dataset, self.currents_dataset)
+                for ss, currents in zip(ss, currents)
             ]
         )
 
-    def __len__(self) -> int:
-        return len(self.rfs_dataset)
+        return rf_settings, formfactors, currents
 
-    def __getitem__(self, index: int):
-        X = (self.rfs_dataset[index], self.formfactors_dataset[index])
-        y = np.concatenate([[self.lengths[index]], self.currents_dataset[index]])
-        return X, y
+    def __len__(self) -> int:
+        return len(self.currents)
+
+    def __getitem__(self, index: int) -> tuple[tuple[np.ndarray, np.ndarray], float]:
+        rf_setting = (
+            self.rf_scaler.transform(self.rf_settings[index])
+            if self.normalize_rf
+            else self.rf_settings[index]
+        )
+        formfactor = (
+            self.formfactor_scaler.transform(self.formfactors[index])
+            if self.normalize_formfactors
+            else self.formfactors[index]
+        )
+        current = (
+            self.current_scaler.transform(self.currents[index])
+            if self.normalize_currents
+            else self.currents[index]
+        )
+
+        return (rf_setting, formfactor), current
 
 
 class ANNCurrentReconstructor(pl.LightningModule):
