@@ -16,3 +16,6 @@ __pycache__
 
 models
 data
+ml-lps-recon-length
+slurm-*.out
+wandb

@@ -5,12 +5,13 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.loggers.wandb import WandbLogger
 from sklearn.preprocessing import MinMaxScaler
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
 
-from .utils import current2formfactor
+from utils import current2formfactor
 
 
 class LengthReconstructionDataset(Dataset):
@@ -29,14 +30,21 @@ class LengthReconstructionDataset(Dataset):
         self.normalize_formfactors = normalize_formfactors
         self.normalize_lengths = normalize_lengths
 
-        self.rf_settings, self.formfactors, self.bunch_lengths_m = self.load_data(path)
+        self.rf_settings, self.formfactors, self.bunch_lengths = self.load_data(path)
 
         if self.normalize_rf:
             self.rf_scaler = MinMaxScaler().fit(self.rf_settings)
+            self.rf_settings = self.rf_scaler.transform(self.rf_settings)
         if self.normalize_formfactors:
             self.formfactor_scaler = MinMaxScaler().fit(self.formfactors)
+            self.formfactors = self.formfactor_scaler.transform(self.formfactors)
         if self.normalize_lengths:
-            self.length_scaler = MinMaxScaler().fit(self.bunch_lengths_m)
+            self.length_scaler = MinMaxScaler().fit(self.bunch_lengths)
+            self.bunch_lengths = self.length_scaler.transform(self.bunch_lengths)
+
+        self.rf_settings = torch.tensor(self.rf_settings, dtype=torch.float32)
+        self.formfactors = torch.tensor(self.formfactors, dtype=torch.float32)
+        self.bunch_lengths = torch.tensor(self.bunch_lengths, dtype=torch.float32)
 
     def load_data(
         self, path: Union[Path, str]
@@ -53,7 +61,7 @@ class LengthReconstructionDataset(Dataset):
         ss = np.stack(
             [np.linspace(0, 300 * df.loc[i, "slice_width"], num=300) for i in df.index]
         )
-        bunch_lengths_m = ss.max(axis=1) - ss.min()
+        bunch_lengths_m = np.expand_dims(ss.max(axis=1) - ss.min(), axis=1)
 
         currents = np.stack(df["slice_I"].values)
 
@@ -69,26 +77,16 @@ class LengthReconstructionDataset(Dataset):
         return rf_settings, formfactors, bunch_lengths_m
 
     def __len__(self) -> int:
-        return len(self.bunch_lengths_m)
+        return len(self.bunch_lengths)
 
-    def __getitem__(self, index: int) -> tuple[tuple[np.ndarray, np.ndarray], float]:
-        rf_setting = (
-            self.rf_scaler.transform(self.rf_settings[index])
-            if self.normalize_rf
-            else self.rf_settings[index]
-        )
-        formfactor = (
-            self.formfactor_scaler.transform(self.formfactors[index])
-            if self.normalize_formfactors
-            else self.formfactors[index]
-        )
-        bunch_length_m = (
-            self.length_scaler.transform(self.bunch_lengths_m[index])
-            if self.normalize_lengths
-            else self.bunch_lengths_m[index]
-        )
+    def __getitem__(
+        self, index: int
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        rf_setting = self.rf_settings[index]
+        formfactor = self.formfactors[index]
+        bunch_length = self.bunch_lengths[index]
 
-        return (rf_setting, formfactor), bunch_length_m
+        return (rf_setting, formfactor), bunch_length
 
 
 class ShapeReconstructionDataset(Dataset):
@@ -174,7 +172,7 @@ class LengthReconstructor(pl.LightningModule):
         super().__init__()
 
         self.mlp = nn.Sequential(
-            nn.Linear(5 + 300, 200),
+            nn.Linear(5 + 240, 200),
             nn.ReLU(),
             nn.Linear(200, 100),
             nn.ReLU(),
@@ -187,7 +185,7 @@ class LengthReconstructor(pl.LightningModule):
     def forward(
         self, rf_settings: torch.Tensor, formfactors: torch.Tensor
     ) -> torch.Tensor:
-        concatenated = torch.concat([rf_settings, formfactors])
+        concatenated = torch.cat([rf_settings, formfactors], dim=1)
         bunch_length = self.mlp(concatenated)
         return bunch_length
 
@@ -217,12 +215,16 @@ def main() -> None:
     dataset = LengthReconstructionDataset("data/zihan/data_20220905.pkl")
     train_dataset, val_dataset = random_split(dataset, [0.8, 0.2])
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=64)
+    train_loader = DataLoader(
+        train_dataset, batch_size=64, shuffle=True, num_workers=40
+    )
+    val_loader = DataLoader(val_dataset, batch_size=64, num_workers=40)
 
     model = LengthReconstructor()
 
-    trainer = pl.Trainer()
+    wandb_logger = WandbLogger(project="ml-lps-recon-length")
+
+    trainer = pl.Trainer(max_epochs=1000, accelerator="auto", logger=wandb_logger)
     trainer.fit(model, train_loader, val_loader)
 
 
