@@ -21,15 +21,20 @@ class Generator(nn.Module):
         super().__init__()
 
         self.formfactor_encoder = nn.Sequential(
-            nn.Conv1d(), nn.Conv1d(), nn.Conv1d(), nn.Flatten()
+            nn.Conv1d(),
+            nn.Conv1d(),
+            nn.Conv1d(),
+            nn.Flatten(),
+            nn.Linear(),
+            nn.Linear(),
         )
         self.current_decoder = nn.Sequential(
             nn.Conv1d()
         )  # TODO Figure out deconvolution
 
-    def forward(self, formfactor, bunch_length):
+    def forward(self, formfactor, rf_settings, bunch_length):
         x = self.formfactor_encoder(formfactor)
-        x = torch.concatenate([x, bunch_length])
+        x = torch.concatenate([x, bunch_length, rf_settings])
         return self.current_decoder(x)
 
 
@@ -52,7 +57,7 @@ class Critic(nn.Module):
         )
         self.mlp = nn.Sequential(nn.Linear(), nn.Linear(), nn.Linear())
 
-    def forward(self, current, bunch_length):
+    def forward(self, current, rf_settings, bunch_length):
         x = self.current_encoder(current)
-        x = torch.concatenate([x, bunch_length])
+        x = torch.concatenate([x, bunch_length, rf_settings])
         return self.mlp(x)
