@@ -2,6 +2,7 @@
 # Discriminator is given bunch length and shape of real and generated example and has to
 # learn to tell them apart as real or generated
 
+import torch
 from torch import nn
 
 
@@ -16,7 +17,20 @@ class Generator(nn.Module):
     profile.
     """
 
-    pass
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.formfactor_encoder = nn.Sequential(
+            nn.Conv1d(), nn.Conv1d(), nn.Conv1d(), nn.Flatten()
+        )
+        self.current_decoder = nn.Sequential(
+            nn.Conv1d()
+        )  # TODO Figure out deconvolution
+
+    def forward(self, formfactor, bunch_length):
+        x = self.formfactor_encoder(formfactor)
+        x = torch.concatenate([x, bunch_length])
+        return self.current_decoder(x)
 
 
 class Critic(nn.Module):
@@ -30,4 +44,15 @@ class Critic(nn.Module):
     1-element output.
     """
 
-    pass
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.current_encoder = nn.Sequential(
+            nn.Conv1d(), nn.Conv1d(), nn.Conv1d(), nn.Flatten()
+        )
+        self.mlp = nn.Sequential(nn.Linear(), nn.Linear(), nn.Linear())
+
+    def forward(self, current, bunch_length):
+        x = self.current_encoder(current)
+        x = torch.concatenate([x, bunch_length])
+        return self.mlp(x)
