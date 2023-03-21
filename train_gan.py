@@ -6,57 +6,29 @@ import torch
 from torch import nn
 
 
-class FormfactorEncoder(nn.Module):
-    """Encodes formfactors to a latent vector."""
+class SignalEncoder(nn.Module):
+    """Encodes a signal to a latent vector."""
 
-    def __init__(self) -> None:
+    def __init__(self, signal_dims, latent_dims) -> None:
         super().__init__()
 
         self.convnet = nn.Sequential(
-            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120
+            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120 / 150
             nn.LeakyReLU(),
-            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60
+            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60 / 75
             nn.LeakyReLU(),
-            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30
+            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30 / 37.5 ?
             nn.LeakyReLU(),
         )
 
         self.flatten = nn.Flatten()
 
         self.mlp = nn.Sequential(
-            nn.Linear(30 * 32, 100), nn.LeakyReLU(), nn.Linear(100, 10)
+            nn.Linear(30 * 32, 100), nn.LeakyReLU(), nn.Linear(100, latent_dims)
         )
 
-    def forward(self, formfactor):
-        x = self.convnet(formfactor)
-        x = self.flatten(x)
-        encoded = self.mlp(x)
-        return encoded
-
-
-class CurrentEncoder(nn.Module):
-    """Encodes a current profile to a latent vector."""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.convnet = nn.Sequential(
-            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120
-            nn.LeakyReLU(),
-            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60
-            nn.LeakyReLU(),
-            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30
-            nn.LeakyReLU(),
-        )
-
-        self.flatten = nn.Flatten()
-
-        self.mlp = nn.Sequential(
-            nn.Linear(30 * 32, 100), nn.LeakyReLU(), nn.Linear(100, 10)
-        )
-
-    def forward(self, current):
-        x = self.convnet(current)
+    def forward(self, signal):
+        x = self.convnet(signal)
         x = self.flatten(x)
         encoded = self.mlp(x)
         return encoded
@@ -104,11 +76,11 @@ class Generator(nn.Module):
     profile.
     """
 
-    def __init__(self, formfactor_encoder, current_decoder) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
-        self.formfactor_encoder = formfactor_encoder
-        self.current_decoder = current_decoder
+        self.formfactor_encoder = SignalEncoder(signal_dims=240, latent_dims=10)
+        self.current_decoder = CurrentDecoder()
 
     def forward(self, formfactor, rf_settings, bunch_length):
         encoded_formfactor = self.formfactor_encoder(formfactor)
@@ -128,11 +100,11 @@ class Critic(nn.Module):
     1-element output.
     """
 
-    def __init__(self, formfactor_encoder, current_encoder) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
-        self.formfactor_encoder = formfactor_encoder
-        self.current_encoder = current_encoder
+        self.formfactor_encoder = SignalEncoder(signal_dims=240, latent_dims=10)
+        self.current_encoder = SignalEncoder(signal_dims=300, latent_dims=10)
 
         self.classifier = nn.Sequential(
             nn.Linear(100, 50),
