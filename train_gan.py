@@ -6,6 +6,93 @@ import torch
 from torch import nn
 
 
+class FormfactorEncoder(nn.Module):
+    """Encodes formfactors to a latent vector."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.convnet = nn.Sequential(
+            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120
+            nn.LeakyReLU(),
+            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60
+            nn.LeakyReLU(),
+            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30
+            nn.LeakyReLU(),
+        )
+
+        self.flatten = nn.Flatten()
+
+        self.mlp = nn.Sequential(
+            nn.Linear(30 * 32, 100), nn.LeakyReLU(), nn.Linear(100, 10)
+        )
+
+    def forward(self, formfactor):
+        x = self.convnet(formfactor)
+        x = self.flatten(x)
+        encoded = self.mlp(x)
+        return encoded
+
+
+class CurrentEncoder(nn.Module):
+    """Encodes a current profile to a latent vector."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.convnet = nn.Sequential(
+            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120
+            nn.LeakyReLU(),
+            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60
+            nn.LeakyReLU(),
+            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30
+            nn.LeakyReLU(),
+        )
+
+        self.flatten = nn.Flatten()
+
+        self.mlp = nn.Sequential(
+            nn.Linear(30 * 32, 100), nn.LeakyReLU(), nn.Linear(100, 10)
+        )
+
+    def forward(self, current):
+        x = self.convnet(current)
+        x = self.flatten(x)
+        encoded = self.mlp(x)
+        return encoded
+
+
+class CurrentDecoder(nn.Module):
+    """Decodes a current profile from a latent vector."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Linear(10 + 5 + 1, 50),
+            nn.LeakyReLU(),
+            nn.Linear(50, 100),
+            nn.LeakyReLU(),
+        )
+
+        self.unflatten = nn.Unflatten(dim=1, unflattened_size=(32, 37.5))
+
+        self.convnet = nn.Sequential(
+            nn.ConvTranspose1d(32, 16, 3, stride=2, padding=1, output_padding=1),  # 75
+            nn.LeakyReLU(),
+            nn.ConvTranspose1d(16, 8, 3, stride=2, padding=1, output_padding=1),  # 150
+            nn.LeakyReLU(),
+            nn.ConvTranspose1d(8, 1, 3, stride=2, padding=1, output_padding=1),  # 300
+            nn.ReLU(),
+        )
+
+    def forward(self, encoded):
+        x = self.current_decoder_mlp(encoded)
+        x = self.unflatten(x)
+        current = self.current_decoder_conv(x)
+        return current
+
+
 class Generator(nn.Module):
     """
     Takes as input a formfactor and the range over which we want the longitudinal
@@ -17,25 +104,17 @@ class Generator(nn.Module):
     profile.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, formfactor_encoder, current_decoder) -> None:
         super().__init__()
 
-        self.formfactor_encoder = nn.Sequential(
-            nn.Conv1d(),
-            nn.Conv1d(),
-            nn.Conv1d(),
-            nn.Flatten(),
-            nn.Linear(),
-            nn.Linear(),
-        )
-        self.current_decoder = nn.Sequential(
-            nn.Conv1d()
-        )  # TODO Figure out deconvolution
+        self.formfactor_encoder = formfactor_encoder
+        self.current_decoder = current_decoder
 
     def forward(self, formfactor, rf_settings, bunch_length):
-        x = self.formfactor_encoder(formfactor)
-        x = torch.concatenate([x, bunch_length, rf_settings])
-        return self.current_decoder(x)
+        encoded_formfactor = self.formfactor_encoder(formfactor)
+        latent = torch.concatenate([encoded_formfactor, bunch_length, rf_settings])
+        current = self.current_decoder(latent)
+        return current
 
 
 class Critic(nn.Module):
@@ -49,15 +128,24 @@ class Critic(nn.Module):
     1-element output.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, formfactor_encoder, current_encoder) -> None:
         super().__init__()
 
-        self.current_encoder = nn.Sequential(
-            nn.Conv1d(), nn.Conv1d(), nn.Conv1d(), nn.Flatten()
-        )
-        self.mlp = nn.Sequential(nn.Linear(), nn.Linear(), nn.Linear())
+        self.formfactor_encoder = formfactor_encoder
+        self.current_encoder = current_encoder
 
-    def forward(self, current, rf_settings, bunch_length):
-        x = self.current_encoder(current)
-        x = torch.concatenate([x, bunch_length, rf_settings])
-        return self.mlp(x)
+        self.classifier = nn.Sequential(
+            nn.Linear(100, 50),
+            nn.LeakyReLU(),
+            nn.Linear(50, 20),
+            nn.LeakyReLU(),
+            nn.Linear(20, 1),
+        )
+
+    def forward(self, current, formfactor, rf_settings, bunch_length):
+        encoded_current = self.current_encoder(current)
+        encoded_formfactor = self.formfactor_encoder(formfactor)
+        x = torch.concatenate(
+            [encoded_current, encoded_formfactor, bunch_length, rf_settings]
+        )
+        return self.classifier(x)
