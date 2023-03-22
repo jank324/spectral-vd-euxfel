@@ -14,9 +14,6 @@ class SignalEncoder(nn.Module):
     def __init__(self, signal_dims, latent_dims) -> None:
         super().__init__()
 
-        self.signal_dims = signal_dims
-        self.latent_dims = latent_dims
-
         self.convnet = nn.Sequential(
             nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120 / 150
             nn.LeakyReLU(),
@@ -29,49 +26,68 @@ class SignalEncoder(nn.Module):
         self.flatten = nn.Flatten()
 
         self.mlp = nn.Sequential(
-            nn.Linear(ceil(self.signal_dims / 8) * 32, 100),
+            nn.Linear(ceil(signal_dims / 8) * 32, 100),
             nn.LeakyReLU(),
             nn.Linear(100, 50),
             nn.LeakyReLU(),
-            nn.Linear(50, self.latent_dims),
+            nn.Linear(50, latent_dims),
         )
 
     def forward(self, signal):
-        x = signal.view(-1, 1, self.signal_dims)
+        x = torch.unsqueeze(signal, dim=1)
         x = self.convnet(x)
         x = self.flatten(x)
         encoded = self.mlp(x)
         return encoded
 
 
-class CurrentDecoder(nn.Module):
-    """Decodes a current profile from a latent vector."""
+class SignalDecoder(nn.Module):
+    """Decodes a signal from a latent vector."""
 
-    def __init__(self, latent_dims, current_dims) -> None:
+    def __init__(self, latent_dims, signal_dims) -> None:
         super().__init__()
 
-        self.latent_dims = latent_dims
-        self.current_dims = current_dims
-
         self.mlp = nn.Sequential(
-            nn.Linear(self.latent_dims, 50),
+            nn.Linear(latent_dims, 50),
             nn.LeakyReLU(),
             nn.Linear(50, 100),
             nn.LeakyReLU(),
-            nn.Linear(100, ceil(self.current_dims / 8) * 32),
+            nn.Linear(100, ceil(signal_dims / 8) * 32),
             nn.LeakyReLU(),
         )
 
         self.unflatten = nn.Unflatten(
-            dim=1, unflattened_size=(32, ceil(self.current_dims / 8))
+            dim=1, unflattened_size=(32, ceil(signal_dims / 8))
         )
 
+        # output_padding = (output_size - (input_size - 1) * 2 - 1) / 2
+        #                  output_size / 2 - (input_size - 1) - 1 / 2
+        #                  output_size / 2 - input_size + 1 - 0.5
+        #                  output_size / 2 - input_size + 1.5
+
+        # input_sizes = [ceil(self.signal_dims / x) for x in [8, 4, 2]]
+        # print(f"{input_sizes = }")
+        # output_paddings = [input_size * 2 - () for input_size in input_sizes]
+        # output_paddings = [int(output_padding) for output_padding in output_paddings]
+        # print(f"{output_paddings = }")
+
         self.convnet = nn.Sequential(
-            nn.ConvTranspose1d(32, 16, 3, stride=2, padding=1),  # 75
+            nn.ConvTranspose1d(
+                32,
+                16,
+                3,
+                stride=2,
+                padding=1,
+                output_padding=(signal_dims % 8 == 0) * 1,
+            ),
             nn.LeakyReLU(),
-            nn.ConvTranspose1d(16, 8, 3, stride=2, padding=1, output_padding=1),  # 150
+            nn.ConvTranspose1d(
+                16, 8, 3, stride=2, padding=1, output_padding=(signal_dims % 4 == 0) * 1
+            ),
             nn.LeakyReLU(),
-            nn.ConvTranspose1d(8, 1, 3, stride=2, padding=1, output_padding=1),  # 300
+            nn.ConvTranspose1d(
+                8, 1, 3, stride=2, padding=1, output_padding=(signal_dims % 2 == 0) * 1
+            ),
             nn.ReLU(),
         )
 
@@ -79,8 +95,8 @@ class CurrentDecoder(nn.Module):
         x = self.mlp(encoded)
         x = self.unflatten(x)
         x = self.convnet(x)
-        current = x.view(-1, self.current_dims)
-        return current
+        signal = torch.squeeze(x)
+        return signal
 
 
 class Generator(nn.Module):
@@ -98,7 +114,7 @@ class Generator(nn.Module):
         super().__init__()
 
         self.formfactor_encoder = SignalEncoder(signal_dims=240, latent_dims=10)
-        self.current_decoder = CurrentDecoder(latent_dims=10 + 5 + 1, current_dims=300)
+        self.current_decoder = SignalDecoder(latent_dims=10 + 5 + 1, signal_dims=300)
 
     def forward(self, formfactor, rf_settings, bunch_length):
         encoded_formfactor = self.formfactor_encoder(formfactor)
