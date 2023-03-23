@@ -4,8 +4,9 @@
 
 from math import ceil
 
+import lightning as L
 import torch
-from torch import nn
+from torch import nn, optim
 
 
 class SignalEncoder(nn.Module):
@@ -147,3 +148,65 @@ class Critic(nn.Module):
         )
         x = self.classifier(x)
         return x
+
+
+class WGANGP(L.LightningModule):
+    """Wasserstein GAN with Gradient Penalty for infering current profile at EuXFEL."""
+
+    def __init__(self, critic_iterations):
+        super().__init__()
+
+        self.critic_iterations = critic_iterations
+
+        self.generator = Generator()
+        self.critic = Critic()
+
+    def forward(self, formfactor, rf_settings, bunch_length):
+        current_profile = self.generator(formfactor, rf_settings, bunch_length)
+        return current_profile
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+
+    def training_step(self, batch, batch_idx):
+        (formfactors, rf_settings, bunch_lengths), current_profiles = batch
+
+        generator_optimizer, critic_optimizer = self.optimizers()
+
+        # Train critic
+        self.toggle_optimizer(critic_optimizer)
+        for _ in range(self.critic_iterations):
+            generated_current_profiles = self.generator(
+                formfactors, rf_settings, bunch_lengths
+            ).detach()
+            critique_real = self.critic(
+                current_profiles, formfactors, rf_settings, bunch_lengths
+            )
+            critique_fake = self.critic(
+                generated_current_profiles, formfactors, rf_settings, bunch_lengths
+            )
+            gradient_penalty = None  # TODO Calculate gradient penalty
+            critic_loss = (
+                -(torch.mean(critique_real) - torch.mean(critique_fake))
+                + self.lambda_gradient_penalty * gradient_penalty
+            )
+            self.critic.zero_grad()
+            self.manual_backward(critic_loss)
+            critic_optimizer.step()
+        # TODO Log critic loss
+        self.untoggle_optimizer(critic_optimizer)
+
+        # Train generator
+        self.toggle_optimizer(generator_optimizer)
+        generated_current_profiles = self.generator(
+            formfactors, rf_settings, bunch_lengths
+        )
+        # TODO Log generated current profiles
+        critique_fake = self.critic(generated_current_profiles)
+        generator_loss = -torch.mean(critique_fake)
+        # TODO Log generator loss
+        self.generator.zero_grad()
+        self.manual_backward(generator_loss)
+        generator_optimizer.step()
+        self.untoggle_optimizer(generator_optimizer)
