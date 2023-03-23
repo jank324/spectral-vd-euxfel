@@ -5,8 +5,13 @@
 from math import ceil
 
 import lightning as L
+import numpy as np
+import pandas as pd
 import torch
 from torch import nn, optim
+from torch.utils.data import DataLoader, Dataset, random_split
+
+from utils import current2formfactor
 
 
 class SignalEncoder(nn.Module):
@@ -216,10 +221,81 @@ class WassersteinGANGP(L.LightningModule):
         self.untoggle_optimizer(generator_optimizer)
 
 
+class EuXFELCurrentDataset(Dataset):
+    """
+    Dataset on reconstructing current profiles from THz spectrum formfactors and RF
+    settings with bunch lengths also given as an input to the prediction.
+
+    `X` is the formfactors, RF settings and bunch lengths. `y` is the current profiles.
+    """
+
+    def __init__(self):
+        self.df = pd.read_pickle("data/zihandata_20220905.pkl")
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, index):
+        current_profile = self.df.loc[index, "slice_I"]
+        rf_settings = self.df.loc[
+            index, ["chirp", "curv", "skew", "chirpL1", "chirpL2"]
+        ]
+        bunch_length = self.df.loc[index, "slice_width"] * len(current_profile)
+
+        formfactor = current2formfactor(
+            ss=np.linspace(0, bunch_length, num=len(current_profile)),
+            currents=current_profile,
+            grating="both",
+            clean=False,
+            n_shots=10,
+        )
+
+        current_profile = torch.tensor(current_profile)
+        rf_settings = torch.tensor(rf_settings)
+        bunch_length = torch.tensor(bunch_length)
+        formfactor = torch.tensor(formfactor)
+
+        return (current_profile, rf_settings, bunch_length), formfactor
+
+
+class EuXFELCurrentDataModule(L.LightningDataModule):
+    """
+    Data Module for reconstructing current profiles from THz spectrum formfactors and RF
+    settings with bunch lengths also given as an input to the prediction.
+    """
+
+    def __init__(self, batch_size=32):
+        super().__init__()
+        self.batch_size = batch_size
+
+    def setup(self, stage):
+        dataset_full = EuXFELCurrentDataset()
+
+        self.dataset_train, self.dataset_val, self.dataset_test = random_split(
+            dataset_full, [0.6, 0.2, 0.2]
+        )
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset_train, batch_size=self.batch_size, workers=2, shuffle=True
+        )
+
+    def val_dataloader(self):
+        return DataLoader(self.dataset_val, batch_size=self.batch_size, workers=2)
+
+    def test_dataloader(self):
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, workers=2)
+
+    def predict_dataloader(self):
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, workers=2)
+
+
 def main():
+    data_module = EuXFELCurrentDataModule(batch_size=64)
     model = WassersteinGANGP()
+
     trainer = L.Trainer()
-    trainer.fit(model, data)
+    trainer.fit(model, data_module)
 
 
 if __name__ == "__main__":
