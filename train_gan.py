@@ -157,6 +157,7 @@ class WassersteinGANGP(L.LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
+        self.automatic_optimization = False
 
         self.critic_iterations = critic_iterations
 
@@ -194,7 +195,7 @@ class WassersteinGANGP(L.LightningModule):
                 -(torch.mean(critique_real) - torch.mean(critique_fake))
                 + self.lambda_gradient_penalty * gradient_penalty
             )
-            self.critic.zero_grad()
+            critic_optimizer.zero_grad()
             self.manual_backward(critic_loss)
             critic_optimizer.step()
         # TODO Log critic loss
@@ -209,7 +210,7 @@ class WassersteinGANGP(L.LightningModule):
         critique_fake = self.critic(generated_current_profiles)
         generator_loss = -torch.mean(critique_fake)
         # TODO Log generator loss
-        self.generator.zero_grad()
+        generator_optimizer.zero_grad()
         self.manual_backward(generator_loss)
         generator_optimizer.step()
         self.untoggle_optimizer(generator_optimizer)
