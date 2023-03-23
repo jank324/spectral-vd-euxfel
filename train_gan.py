@@ -150,10 +150,10 @@ class Critic(nn.Module):
         return x
 
 
-class WGANGP(L.LightningModule):
+class WassersteinGANGP(L.LightningModule):
     """Wasserstein GAN with Gradient Penalty for infering current profile at EuXFEL."""
 
-    def __init__(self, critic_iterations):
+    def __init__(self, critic_iterations: int = 5):
         super().__init__()
 
         self.critic_iterations = critic_iterations
@@ -210,3 +210,13 @@ class WGANGP(L.LightningModule):
         self.manual_backward(generator_loss)
         generator_optimizer.step()
         self.untoggle_optimizer(generator_optimizer)
+
+
+def main():
+    model = WassersteinGANGP()
+    trainer = L.Trainer()
+    trainer.fit(model, data)
+
+
+if __name__ == "__main__":
+    main()
