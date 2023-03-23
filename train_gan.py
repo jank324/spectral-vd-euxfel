@@ -166,8 +166,9 @@ class WassersteinGANGP(L.LightningModule):
         return current_profile
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=1e-3)
-        return optimizer
+        generator_optimizer = optim.Adam(self.generator.parameters(), lr=1e-3)
+        critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
+        return generator_optimizer, critic_optimizer
 
     def training_step(self, batch, batch_idx):
         (formfactors, rf_settings, bunch_lengths), current_profiles = batch
