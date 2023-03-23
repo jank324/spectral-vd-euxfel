@@ -8,6 +8,7 @@ import lightning as L
 import numpy as np
 import pandas as pd
 import torch
+from lightning.pytorch.loggers import WandbLogger
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -203,7 +204,7 @@ class WassersteinGANGP(L.LightningModule):
             critic_optimizer.zero_grad()
             self.manual_backward(critic_loss)
             critic_optimizer.step()
-        # TODO Log critic loss
+        self.log("train/critic_loss", critic_loss)
         self.untoggle_optimizer(critic_optimizer)
 
         # Train generator
@@ -214,7 +215,7 @@ class WassersteinGANGP(L.LightningModule):
         # TODO Log generated current profiles
         critique_fake = self.critic(generated_current_profiles)
         generator_loss = -torch.mean(critique_fake)
-        # TODO Log generator loss
+        self.log("train/generator_loss", generator_loss)
         generator_optimizer.zero_grad()
         self.manual_backward(generator_loss)
         generator_optimizer.step()
@@ -294,7 +295,9 @@ def main():
     data_module = EuXFELCurrentDataModule(batch_size=64)
     model = WassersteinGANGP()
 
-    trainer = L.Trainer()
+    wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
+
+    trainer = L.Trainer(logger=wandb_logger)
     trainer.fit(model, data_module)
 
 
