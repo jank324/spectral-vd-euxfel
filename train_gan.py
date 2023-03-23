@@ -156,6 +156,8 @@ class WassersteinGANGP(L.LightningModule):
     def __init__(self, critic_iterations: int = 5):
         super().__init__()
 
+        self.save_hyperparameters()
+
         self.critic_iterations = critic_iterations
 
         self.generator = Generator()
