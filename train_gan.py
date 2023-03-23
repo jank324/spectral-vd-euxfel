@@ -179,8 +179,30 @@ class WassersteinGANGP(L.LightningModule):
         critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
         return generator_optimizer, critic_optimizer
 
+    def gradient_penalty_loss(self, real_current_profiles, generated_current_profiles):
+        # Interpolate real and generated current profiles
+        batch_size, n_channels, n_current_samples = real_current_profiles.shape
+        alpha = torch.rand(batch_size, 1, 1).repeat(1, n_channels, n_current_samples)
+        interpolated_current_profiles = (
+            alpha * real_current_profiles + (1 - alpha) * generated_current_profiles
+        )
+
+        # Calculate critic scores
+        mixed_critiques = self.critic(interpolated_current_profiles)
+
+        # Take the gradient of the critic outputs with respect to the current profiles
+        gradient = torch.autograd.grad(
+            inputs=interpolated_current_profiles,
+            outputs=mixed_critiques,
+            grad_outputs=torch.ones_like(mixed_critiques),
+        )[0]
+        gradient = gradient.view(gradient.shape[0], -1)
+        gradient_norm = gradient.norm(2, dim=1)
+        gradient_penalty = torch.mean((gradient_norm - 1) ** 2)
+        return gradient_penalty
+
     def training_step(self, batch, batch_idx):
-        (formfactors, rf_settings, bunch_lengths), current_profiles = batch
+        (formfactors, rf_settings, bunch_lengths), real_current_profiles = batch
 
         generator_optimizer, critic_optimizer = self.optimizers()
 
@@ -191,12 +213,14 @@ class WassersteinGANGP(L.LightningModule):
                 formfactors, rf_settings, bunch_lengths
             ).detach()
             critique_real = self.critic(
-                current_profiles, formfactors, rf_settings, bunch_lengths
+                real_current_profiles, formfactors, rf_settings, bunch_lengths
             )
             critique_fake = self.critic(
                 generated_current_profiles, formfactors, rf_settings, bunch_lengths
             )
-            gradient_penalty = None  # TODO Calculate gradient penalty
+            gradient_penalty = self.gradient_penalty_loss(
+                real_current_profiles, generated_current_profiles
+            )
             critic_loss = (
                 -(torch.mean(critique_real) - torch.mean(critique_fake))
                 + self.lambda_gradient_penalty * gradient_penalty
