@@ -60,17 +60,6 @@ class SignalDecoder(nn.Module):
             dim=1, unflattened_size=(32, ceil(signal_dims / 8))
         )
 
-        # output_padding = (output_size - (input_size - 1) * 2 - 1) / 2
-        #                  output_size / 2 - (input_size - 1) - 1 / 2
-        #                  output_size / 2 - input_size + 1 - 0.5
-        #                  output_size / 2 - input_size + 1.5
-
-        # input_sizes = [ceil(self.signal_dims / x) for x in [8, 4, 2]]
-        # print(f"{input_sizes = }")
-        # output_paddings = [input_size * 2 - () for input_size in input_sizes]
-        # output_paddings = [int(output_padding) for output_padding in output_paddings]
-        # print(f"{output_paddings = }")
-
         self.convnet = nn.Sequential(
             nn.ConvTranspose1d(
                 32,
