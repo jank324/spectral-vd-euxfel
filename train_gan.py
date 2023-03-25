@@ -4,6 +4,7 @@
 
 # TODO Implement MLP encoder and decoder
 # TODO Implement supervised single-model training setup
+# TODO Fix the fact that data is normalised on all data (including test and validation)
 
 from math import ceil
 
