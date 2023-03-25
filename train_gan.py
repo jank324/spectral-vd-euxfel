@@ -2,6 +2,10 @@
 # Discriminator is given bunch length and shape of real and generated example and has to
 # learn to tell them apart as real or generated
 
+# TODO Implement MLP encoder and decoder
+# TODO Implement supervised single-model training setup
+# TODO Add data normalisation
+
 from math import ceil
 
 import lightning as L
