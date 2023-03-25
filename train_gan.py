@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from utils import current2formfactor
 
 
-class SignalEncoder(nn.Module):
+class ConvolutionalEncoder(nn.Module):
     """Encodes a signal to a latent vector."""
 
     def __init__(self, signal_dims, latent_dims) -> None:
@@ -48,7 +48,7 @@ class SignalEncoder(nn.Module):
         return encoded
 
 
-class SignalDecoder(nn.Module):
+class ConvolutionalDecoder(nn.Module):
     """Decodes a signal from a latent vector."""
 
     def __init__(self, latent_dims, signal_dims) -> None:
@@ -109,8 +109,10 @@ class Generator(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-        self.formfactor_encoder = SignalEncoder(signal_dims=240, latent_dims=10)
-        self.current_decoder = SignalDecoder(latent_dims=10 + 5 + 1, signal_dims=300)
+        self.formfactor_encoder = ConvolutionalEncoder(signal_dims=240, latent_dims=10)
+        self.current_decoder = ConvolutionalDecoder(
+            latent_dims=10 + 5 + 1, signal_dims=300
+        )
 
     def forward(self, formfactor, rf_settings, bunch_length):
         encoded_formfactor = self.formfactor_encoder(formfactor)
@@ -135,8 +137,8 @@ class Critic(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-        self.formfactor_encoder = SignalEncoder(signal_dims=240, latent_dims=10)
-        self.current_encoder = SignalEncoder(signal_dims=300, latent_dims=10)
+        self.formfactor_encoder = ConvolutionalEncoder(signal_dims=240, latent_dims=10)
+        self.current_encoder = ConvolutionalEncoder(signal_dims=300, latent_dims=10)
 
         self.classifier = nn.Sequential(
             nn.Linear(10 + 10 + 5 + 1, 50),
