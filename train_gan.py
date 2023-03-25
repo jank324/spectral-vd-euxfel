@@ -287,30 +287,42 @@ class EuXFELCurrentDataset(Dataset):
     """
 
     def __init__(self):
-        self.df = pd.read_pickle("data/zihan/data_20220905.pkl")
+        df = pd.read_pickle("data/zihan/data_20220905.pkl")
 
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, index):
-        current_profile = self.df.loc[index, "slice_I"]
-        rf_settings = self.df.loc[
-            index, ["chirp", "curv", "skew", "chirpL1", "chirpL2"]
-        ]
-        bunch_length = self.df.loc[index, "slice_width"] * len(current_profile)
-
-        _, formfactor = current2formfactor(
-            ss=np.linspace(0, bunch_length, num=len(current_profile)),
-            currents=np.array(current_profile),
-            grating="both",
-            clean=False,
-            n_shots=10,
+        self.current_profiles = np.stack(df.loc[:, "slice_I"])
+        self.rf_settings = df.loc[
+            :, ["chirp", "curv", "skew", "chirpL1", "chirpL2"]
+        ].values
+        self.bunch_lengths = (
+            df.loc[:, "slice_width"].values * self.current_profiles.shape[1]
         )
 
-        current_profile = torch.tensor(current_profile, dtype=torch.float32)
+        self.formfactors = [
+            current2formfactor(
+                ss=np.linspace(0, bunch_length, num=len(current_profile)),
+                currents=np.array(current_profile),
+                grating="both",
+                clean=False,
+                n_shots=10,
+            )[1]
+            for current_profile, bunch_length in zip(
+                self.current_profiles, self.bunch_lengths
+            )
+        ]
+
+    def __len__(self):
+        return len(self.bunch_lengths)
+
+    def __getitem__(self, index):
+        formfactor = self.formfactors[index]
+        rf_settings = self.rf_settings[index]
+        bunch_length = self.bunch_lengths[index]
+        current_profile = self.current_profiles[index]
+
+        formfactor = torch.tensor(formfactor, dtype=torch.float32)
         rf_settings = torch.tensor(rf_settings, dtype=torch.float32)
         bunch_length = torch.tensor(bunch_length, dtype=torch.float32).unsqueeze(dim=0)
-        formfactor = torch.tensor(formfactor, dtype=torch.float32)
+        current_profile = torch.tensor(current_profile, dtype=torch.float32)
 
         return (formfactor, rf_settings, bunch_length), current_profile
 
