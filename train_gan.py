@@ -91,7 +91,7 @@ class SignalDecoder(nn.Module):
         x = self.mlp(encoded)
         x = self.unflatten(x)
         x = self.convnet(x)
-        signal = torch.squeeze(x)
+        signal = torch.squeeze(x, dim=1)
         return signal
 
 
@@ -143,7 +143,7 @@ class Critic(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(50, 20),
             nn.LeakyReLU(),
-            nn.Linear(20, 1),
+            nn.Linear(20, 1),  # TODO Activation on output?
         )
 
     def forward(self, current, formfactor, rf_settings, bunch_length):
@@ -159,13 +159,21 @@ class Critic(nn.Module):
 class WassersteinGANGP(L.LightningModule):
     """Wasserstein GAN with Gradient Penalty for infering current profile at EuXFEL."""
 
-    def __init__(self, critic_iterations: int = 5):
+    def __init__(
+        self, critic_iterations: int = 5, lambda_gradient_penalty: float = 10.0
+    ):
         super().__init__()
+
+        self.critic_iterations = critic_iterations
+        self.lambda_gradient_penalty = lambda_gradient_penalty
 
         self.save_hyperparameters()
         self.automatic_optimization = False
-
-        self.critic_iterations = critic_iterations
+        self.example_input_array = [
+            torch.rand(1, 240),
+            torch.rand(1, 5),
+            torch.rand(1, 1),
+        ]
 
         self.generator = Generator()
         self.critic = Critic()
@@ -179,22 +187,37 @@ class WassersteinGANGP(L.LightningModule):
         critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
         return generator_optimizer, critic_optimizer
 
-    def gradient_penalty_loss(self, real_current_profiles, generated_current_profiles):
+    def gradient_penalty_loss(
+        self,
+        real_current_profiles,
+        generated_current_profiles,
+        formfactors,
+        rf_settings,
+        bunch_lengths,
+    ):
         # Interpolate real and generated current profiles
-        batch_size, n_channels, n_current_samples = real_current_profiles.shape
-        alpha = torch.rand(batch_size, 1, 1).repeat(1, n_channels, n_current_samples)
+        batch_size, n_current_samples = real_current_profiles.size()
+        alpha = (
+            torch.rand(batch_size, 1)
+            .repeat(1, n_current_samples)
+            .type_as(generated_current_profiles)
+        )
         interpolated_current_profiles = (
             alpha * real_current_profiles + (1 - alpha) * generated_current_profiles
         )
 
         # Calculate critic scores
-        mixed_critiques = self.critic(interpolated_current_profiles)
+        mixed_critiques = self.critic(
+            interpolated_current_profiles, formfactors, rf_settings, bunch_lengths
+        )
 
         # Take the gradient of the critic outputs with respect to the current profiles
         gradient = torch.autograd.grad(
-            inputs=interpolated_current_profiles,
             outputs=mixed_critiques,
+            inputs=interpolated_current_profiles,
             grad_outputs=torch.ones_like(mixed_critiques),
+            create_graph=True,
+            retain_graph=True,
         )[0]
         gradient = gradient.view(gradient.shape[0], -1)
         gradient_norm = gradient.norm(2, dim=1)
@@ -207,11 +230,10 @@ class WassersteinGANGP(L.LightningModule):
         generator_optimizer, critic_optimizer = self.optimizers()
 
         # Train critic
-        self.toggle_optimizer(critic_optimizer)
         for _ in range(self.critic_iterations):
             generated_current_profiles = self.generator(
                 formfactors, rf_settings, bunch_lengths
-            ).detach()
+            )
             critique_real = self.critic(
                 real_current_profiles, formfactors, rf_settings, bunch_lengths
             )
@@ -219,7 +241,11 @@ class WassersteinGANGP(L.LightningModule):
                 generated_current_profiles, formfactors, rf_settings, bunch_lengths
             )
             gradient_penalty = self.gradient_penalty_loss(
-                real_current_profiles, generated_current_profiles
+                real_current_profiles,
+                generated_current_profiles,
+                formfactors,
+                rf_settings,
+                bunch_lengths,
             )
             critic_loss = (
                 -(torch.mean(critique_real) - torch.mean(critique_fake))
@@ -229,21 +255,20 @@ class WassersteinGANGP(L.LightningModule):
             self.manual_backward(critic_loss)
             critic_optimizer.step()
         self.log("train/critic_loss", critic_loss)
-        self.untoggle_optimizer(critic_optimizer)
 
         # Train generator
-        self.toggle_optimizer(generator_optimizer)
         generated_current_profiles = self.generator(
             formfactors, rf_settings, bunch_lengths
         )
         # TODO Log generated current profiles
-        critique_fake = self.critic(generated_current_profiles)
+        critique_fake = self.critic(
+            generated_current_profiles, formfactors, rf_settings, bunch_lengths
+        )
         generator_loss = -torch.mean(critique_fake)
         self.log("train/generator_loss", generator_loss)
         generator_optimizer.zero_grad()
         self.manual_backward(generator_loss)
         generator_optimizer.step()
-        self.untoggle_optimizer(generator_optimizer)
 
 
 class EuXFELCurrentDataset(Dataset):
@@ -255,7 +280,7 @@ class EuXFELCurrentDataset(Dataset):
     """
 
     def __init__(self):
-        self.df = pd.read_pickle("data/zihandata_20220905.pkl")
+        self.df = pd.read_pickle("data/zihan/data_20220905.pkl")
 
     def __len__(self):
         return len(self.df)
@@ -267,20 +292,20 @@ class EuXFELCurrentDataset(Dataset):
         ]
         bunch_length = self.df.loc[index, "slice_width"] * len(current_profile)
 
-        formfactor = current2formfactor(
+        _, formfactor = current2formfactor(
             ss=np.linspace(0, bunch_length, num=len(current_profile)),
-            currents=current_profile,
+            currents=np.array(current_profile),
             grating="both",
             clean=False,
             n_shots=10,
         )
 
-        current_profile = torch.tensor(current_profile)
-        rf_settings = torch.tensor(rf_settings)
-        bunch_length = torch.tensor(bunch_length)
-        formfactor = torch.tensor(formfactor)
+        current_profile = torch.tensor(current_profile, dtype=torch.float32)
+        rf_settings = torch.tensor(rf_settings, dtype=torch.float32)
+        bunch_length = torch.tensor(bunch_length, dtype=torch.float32).unsqueeze(dim=0)
+        formfactor = torch.tensor(formfactor, dtype=torch.float32)
 
-        return (current_profile, rf_settings, bunch_length), formfactor
+        return (formfactor, rf_settings, bunch_length), current_profile
 
 
 class EuXFELCurrentDataModule(L.LightningDataModule):
@@ -302,26 +327,27 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.dataset_train, batch_size=self.batch_size, workers=2, shuffle=True
+            self.dataset_train, batch_size=self.batch_size, num_workers=10, shuffle=True
         )
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size, workers=2)
+        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=10)
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, workers=2)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=10)
 
     def predict_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, workers=2)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=10)
 
 
 def main():
-    data_module = EuXFELCurrentDataModule(batch_size=64)
+    data_module = EuXFELCurrentDataModule(batch_size=32)
     model = WassersteinGANGP()
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
-    trainer = L.Trainer(logger=wandb_logger)
+    # TODO Fix errors raised when running on accelerator="mps"
+    trainer = L.Trainer(logger=wandb_logger, fast_dev_run=True, accelerator="cpu")
     trainer.fit(model, data_module)
 
 

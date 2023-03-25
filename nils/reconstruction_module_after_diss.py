@@ -224,9 +224,9 @@ def extrapolation_high(
     if np.size(noise_plus[indices_im] > 0):
         noise_plus[indices_im] = det_lim_inter - fit_formfactors[indices_im]
         # aber mindestend die shot-to-shot vom letzten
-        noise_plus[
-            noise_plus < sorted_formfactor_noise_plus[-1]
-        ] = sorted_formfactor_noise_plus[-1]
+        noise_plus[noise_plus < sorted_formfactor_noise_plus[-1]] = (
+            sorted_formfactor_noise_plus[-1]
+        )
     new_noise_minus = np.append(sorted_formfactor_noise_minus, noise_minus)
     new_noise_plus = np.append(sorted_formfactor_noise_plus, noise_plus)
     new_freqs = np.append(sorted_frequencies, fit_freqs)
@@ -469,7 +469,7 @@ def gerchberg_saxton(
     below phase_condition
     """
 
-    j = np.complex(0, 1)
+    j = complex(0, 1)
     seed_phase = start_phase
     difference = 1e6
     new_formfactor = np.copy(formfactors)
