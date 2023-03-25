@@ -4,7 +4,6 @@
 
 # TODO Implement MLP encoder and decoder
 # TODO Implement supervised single-model training setup
-# TODO Add data normalisation
 
 from math import ceil
 
@@ -13,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 from lightning.pytorch.loggers import WandbLogger
+from sklearn.preprocessing import StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -286,20 +286,22 @@ class EuXFELCurrentDataset(Dataset):
     `X` is the formfactors, RF settings and bunch lengths. `y` is the current profiles.
     """
 
-    def __init__(self):
+    def __init__(self, normalize: bool = False):
+        self.normalize = normalize
+
         df = pd.read_pickle("data/zihan/data_20220905.pkl")
 
         self.current_profiles = np.stack(df.loc[:, "slice_I"])
         self.rf_settings = df.loc[
             :, ["chirp", "curv", "skew", "chirpL1", "chirpL2"]
         ].values
-        self.bunch_lengths = (
-            df.loc[:, "slice_width"].values * self.current_profiles.shape[1]
+        self.bunch_lengths = np.expand_dims(
+            df.loc[:, "slice_width"].values * self.current_profiles.shape[1], axis=1
         )
 
         self.formfactors = [
             current2formfactor(
-                ss=np.linspace(0, bunch_length, num=len(current_profile)),
+                ss=np.linspace(0, bunch_length[0], num=len(current_profile)),
                 currents=np.array(current_profile),
                 grating="both",
                 clean=False,
@@ -310,6 +312,12 @@ class EuXFELCurrentDataset(Dataset):
             )
         ]
 
+        if self.normalize:
+            self.current_scaler = StandardScaler().fit(self.current_profiles)
+            self.rf_scaler = StandardScaler().fit(self.rf_settings)
+            self.bunch_length_scaler = StandardScaler().fit(self.bunch_lengths)
+            self.formfactor_scaler = StandardScaler().fit(self.formfactors)
+
     def __len__(self):
         return len(self.bunch_lengths)
 
@@ -319,9 +327,15 @@ class EuXFELCurrentDataset(Dataset):
         bunch_length = self.bunch_lengths[index]
         current_profile = self.current_profiles[index]
 
+        if self.normalize:
+            formfactor = self.formfactor_scaler.transform([formfactor])[0]
+            rf_settings = self.rf_scaler.transform([rf_settings])[0]
+            bunch_length = self.bunch_length_scaler.transform([bunch_length])[0]
+            current_profile = self.current_scaler.transform([current_profile])[0]
+
         formfactor = torch.tensor(formfactor, dtype=torch.float32)
         rf_settings = torch.tensor(rf_settings, dtype=torch.float32)
-        bunch_length = torch.tensor(bunch_length, dtype=torch.float32).unsqueeze(dim=0)
+        bunch_length = torch.tensor(bunch_length, dtype=torch.float32)
         current_profile = torch.tensor(current_profile, dtype=torch.float32)
 
         return (formfactor, rf_settings, bunch_length), current_profile
@@ -333,12 +347,13 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
     settings with bunch lengths also given as an input to the prediction.
     """
 
-    def __init__(self, batch_size=32):
+    def __init__(self, batch_size=32, normalize=False):
         super().__init__()
         self.batch_size = batch_size
+        self.normalize = normalize
 
     def setup(self, stage):
-        dataset_full = EuXFELCurrentDataset()
+        dataset_full = EuXFELCurrentDataset(normalize=self.normalize)
 
         self.dataset_train, self.dataset_val, self.dataset_test = random_split(
             dataset_full, [0.6, 0.2, 0.2]
