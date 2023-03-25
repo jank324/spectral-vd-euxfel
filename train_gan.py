@@ -117,8 +117,8 @@ class Generator(nn.Module):
         latent = torch.concatenate(
             [encoded_formfactor, bunch_length, rf_settings], dim=1
         )
-        current = self.current_decoder(latent)
-        return current
+        current_profile = self.current_decoder(latent)
+        return current_profile
 
 
 class Critic(nn.Module):
@@ -146,11 +146,12 @@ class Critic(nn.Module):
             nn.Linear(20, 1),  # TODO Activation on output?
         )
 
-    def forward(self, current, formfactor, rf_settings, bunch_length):
-        encoded_current = self.current_encoder(current)
+    def forward(self, current_profile, formfactor, rf_settings, bunch_length):
+        encoded_current_profile = self.current_encoder(current_profile)
         encoded_formfactor = self.formfactor_encoder(formfactor)
         x = torch.concatenate(
-            [encoded_current, encoded_formfactor, bunch_length, rf_settings], dim=1
+            [encoded_current_profile, encoded_formfactor, bunch_length, rf_settings],
+            dim=1,
         )
         x = self.classifier(x)
         return x
