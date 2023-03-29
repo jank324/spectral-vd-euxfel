@@ -2,9 +2,6 @@
 # Discriminator is given bunch length and shape of real and generated example and has to
 # learn to tell them apart as real or generated
 
-# TODO Implement MLP encoder and decoder
-# TODO Implement supervised single-model training setup
-
 
 from math import ceil
 from typing import Optional
