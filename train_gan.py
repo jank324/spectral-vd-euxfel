@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from utils import current2formfactor
 
 
@@ -418,7 +419,6 @@ class WassersteinGANGP(L.LightningModule):
         generated_current_profiles = self.generator(
             formfactors, rf_settings, bunch_lengths
         )
-        # TODO Log generated current profiles
         critique_fake = self.critic(
             generated_current_profiles, formfactors, rf_settings, bunch_lengths
         )
@@ -427,6 +427,39 @@ class WassersteinGANGP(L.LightningModule):
         generator_optimizer.zero_grad()
         self.manual_backward(generator_loss)
         generator_optimizer.step()
+
+    def validation_step(self, batch, batch_idx):
+        (formfactors, rf_settings, bunch_lengths), real_current_profiles = batch
+
+        generated_current_profiles = self.generator(
+            formfactors, rf_settings, bunch_lengths
+        )
+        critique_real = self.critic(
+            real_current_profiles, formfactors, rf_settings, bunch_lengths
+        )
+        critique_fake = self.critic(
+            generated_current_profiles, formfactors, rf_settings, bunch_lengths
+        )
+        wasserstein_distance = -(torch.mean(critique_real) - torch.mean(critique_fake))
+        generator_loss = -torch.mean(critique_fake)
+
+        self.log("validate/wasserstein_distance", wasserstein_distance)
+        self.log("validate/generator_loss", generator_loss)
+
+        wandb.log(
+            {
+                "real_vs_generated_validation_plot": wandb.plot.line_series(
+                    xs=np.linspace(0, bunch_lengths[0], 300).tolist(),
+                    ys=[
+                        real_current_profiles[0].tolist(),
+                        generated_current_profiles[0].tolist(),
+                    ],
+                    keys=["real current", "generated current"],
+                    title="Real vs. generated currents",
+                    xname="s",
+                )
+            }
+        )
 
 
 def main():
