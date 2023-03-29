@@ -263,7 +263,7 @@ class WassersteinGANGP(L.LightningModule):
             critic_optimizer.zero_grad()
             self.manual_backward(critic_loss)
             critic_optimizer.step()
-        self.log("train/gradient_penalty")
+        self.log("train/gradient_penalty", gradient_penalty)
         self.log("train/critic_loss", critic_loss)
 
         # Train generator
