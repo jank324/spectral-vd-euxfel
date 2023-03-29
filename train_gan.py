@@ -4,9 +4,10 @@
 
 # TODO Implement MLP encoder and decoder
 # TODO Implement supervised single-model training setup
-# TODO Fix the fact that data is normalised on all data (including test and validation)
+
 
 from math import ceil
+from typing import Optional
 
 import lightning as L
 import numpy as np
@@ -15,7 +16,7 @@ import torch
 from lightning.pytorch.loggers import WandbLogger
 from sklearn.preprocessing import StandardScaler
 from torch import nn, optim
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 
 from utils import current2formfactor
 
@@ -288,10 +289,20 @@ class EuXFELCurrentDataset(Dataset):
     `X` is the formfactors, RF settings and bunch lengths. `y` is the current profiles.
     """
 
-    def __init__(self, normalize: bool = False):
+    def __init__(
+        self,
+        stage: str = "train",
+        normalize: bool = False,
+        current_scaler: Optional[StandardScaler] = None,
+        rf_scaler: Optional[StandardScaler] = None,
+        bunch_length_scaler: Optional[StandardScaler] = None,
+        formfactor_scaler: Optional[StandardScaler] = None,
+    ):
         self.normalize = normalize
 
-        df = pd.read_pickle("data/zihan/data_20220905.pkl")
+        assert stage in ["train", "validation", "test"]
+
+        df = pd.read_pickle(f"data/zihan/data_20220905_{stage}.pkl")
 
         self.current_profiles = np.stack(df.loc[:, "slice_I"])
         self.rf_settings = df.loc[
@@ -315,10 +326,9 @@ class EuXFELCurrentDataset(Dataset):
         ]
 
         if self.normalize:
-            self.current_scaler = StandardScaler().fit(self.current_profiles)
-            self.rf_scaler = StandardScaler().fit(self.rf_settings)
-            self.bunch_length_scaler = StandardScaler().fit(self.bunch_lengths)
-            self.formfactor_scaler = StandardScaler().fit(self.formfactors)
+            self.setup_normalization(
+                current_scaler, rf_scaler, bunch_length_scaler, formfactor_scaler
+            )
 
     def __len__(self):
         return len(self.bunch_lengths)
@@ -342,6 +352,40 @@ class EuXFELCurrentDataset(Dataset):
 
         return (formfactor, rf_settings, bunch_length), current_profile
 
+    def setup_normalization(
+        self,
+        current_scaler: Optional[StandardScaler] = None,
+        rf_scaler: Optional[StandardScaler] = None,
+        bunch_length_scaler: Optional[StandardScaler] = None,
+        formfactor_scaler: Optional[StandardScaler] = None,
+    ) -> None:
+        """
+        Creates normalisation scalers for each of the four variables return by this
+        dataset. Pass scalers that should be used. If a scaler is not passed, a new one
+        is fitted to the data in the dataset.
+        """
+
+        self.current_scaler = (
+            current_scaler
+            if current_scaler is not None
+            else StandardScaler().fit(self.current_profiles)
+        )
+        self.rf_scaler = (
+            rf_scaler
+            if rf_scaler is not None
+            else StandardScaler().fit(self.rf_settings)
+        )
+        self.bunch_length_scaler = (
+            bunch_length_scaler
+            if bunch_length_scaler is not None
+            else StandardScaler().fit(self.bunch_lengths)
+        )
+        self.formfactor_scaler = (
+            formfactor_scaler
+            if formfactor_scaler is not None
+            else StandardScaler().fit(self.formfactors)
+        )
+
 
 class EuXFELCurrentDataModule(L.LightningDataModule):
     """
@@ -355,10 +399,22 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         self.normalize = normalize
 
     def setup(self, stage):
-        dataset_full = EuXFELCurrentDataset(normalize=self.normalize)
-
-        self.dataset_train, self.dataset_val, self.dataset_test = random_split(
-            dataset_full, [0.6, 0.2, 0.2]
+        self.dataset_train = EuXFELCurrentDataset(stage="train", normalize=True)
+        self.dataset_val = EuXFELCurrentDataset(
+            stage="validation",
+            normalize=True,
+            current_scaler=self.dataset_train.current_scaler,
+            rf_scaler=self.dataset_train.rf_scaler,
+            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
+            formfactor_scaler=self.dataset_train.formfactor_scaler,
+        )
+        self.dataset_test = EuXFELCurrentDataset(
+            stage="test",
+            normalize=True,
+            current_scaler=self.dataset_train.current_scaler,
+            rf_scaler=self.dataset_train.rf_scaler,
+            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
+            formfactor_scaler=self.dataset_train.formfactor_scaler,
         )
 
     def train_dataloader(self):
