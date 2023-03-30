@@ -158,18 +158,16 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(
-            self.dataset_train, batch_size=self.batch_size, num_workers=10, shuffle=True
-        )
+        return DataLoader(self.dataset_train, batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=10)
+        return DataLoader(self.dataset_val, batch_size=self.batch_size)
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=10)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size)
 
     def predict_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=10)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size)
 
 
 class ConvolutionalEncoder(nn.Module):
@@ -518,7 +516,7 @@ def main():
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
-    # TODO Fix errors raised when running on accelerator="mps"
+    # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
     trainer = L.Trainer(logger=wandb_logger, fast_dev_run=True, accelerator="cpu")
     trainer.fit(model, data_module)
 
