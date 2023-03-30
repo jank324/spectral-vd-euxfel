@@ -261,20 +261,31 @@ class Generator(nn.Module):
     profile.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        num_rf_settings: int = 5,
+        num_formfactor_samples: int = 240,
+        num_current_samples: int = 300,
+        encoded_formfactor_dims: int = 10,
+        latent_dims: int = 10,
+    ) -> None:
         super().__init__()
 
-        self.formfactor_encoder = ConvolutionalEncoder(signal_dims=240, latent_dims=10)
+        self.formfactor_encoder = ConvolutionalEncoder(
+            signal_dims=num_formfactor_samples, latent_dims=encoded_formfactor_dims
+        )
         self.scalar_spectral_combine_mlp = nn.Sequential(
-            nn.Linear(10 + 5, 50),
+            nn.Linear(encoded_formfactor_dims + num_rf_settings, 50),
             nn.LeakyReLU(),
             nn.Linear(50, 20),
             nn.LeakyReLU(),
-            nn.Linear(20, 10),
+            nn.Linear(20, latent_dims),
         )
-        self.current_decoder = ConvolutionalDecoder(latent_dims=10, signal_dims=300)
+        self.current_decoder = ConvolutionalDecoder(
+            latent_dims=latent_dims, signal_dims=num_current_samples
+        )
         self.bunch_length_decoder = nn.Sequential(
-            nn.Linear(10, 20), nn.LeakyReLU(), nn.Linear(20, 1)
+            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1)
         )
 
     def forward(self, rf_settings, formfactor):
