@@ -308,14 +308,28 @@ class Critic(nn.Module):
     1-element output.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        num_rf_settings: int = 5,
+        num_formfactor_samples: int = 240,
+        num_current_samples: int = 300,
+        encoded_formfactor_dims: int = 10,
+        encoded_current_dims: int = 10,
+    ) -> None:
         super().__init__()
 
-        self.formfactor_encoder = ConvolutionalEncoder(signal_dims=240, latent_dims=10)
-        self.current_encoder = ConvolutionalEncoder(signal_dims=300, latent_dims=10)
+        self.formfactor_encoder = ConvolutionalEncoder(
+            signal_dims=num_formfactor_samples, latent_dims=encoded_formfactor_dims
+        )
+        self.current_encoder = ConvolutionalEncoder(
+            signal_dims=num_current_samples, latent_dims=encoded_current_dims
+        )
 
+        classifier_input_dims = (
+            num_rf_settings + encoded_formfactor_dims + encoded_current_dims + 1
+        )
         self.classifier = nn.Sequential(
-            nn.Linear(5 + 10 + 10 + 1, 50),
+            nn.Linear(classifier_input_dims, 50),
             nn.LeakyReLU(),
             nn.Linear(50, 20),
             nn.LeakyReLU(),
