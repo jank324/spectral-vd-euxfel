@@ -31,10 +31,10 @@ class EuXFELCurrentDataset(Dataset):
         self,
         stage: str = "train",
         normalize: bool = False,
-        current_scaler: Optional[StandardScaler] = None,
         rf_scaler: Optional[StandardScaler] = None,
-        bunch_length_scaler: Optional[StandardScaler] = None,
         formfactor_scaler: Optional[StandardScaler] = None,
+        current_scaler: Optional[StandardScaler] = None,
+        bunch_length_scaler: Optional[StandardScaler] = None,
     ):
         self.normalize = normalize
 
@@ -65,37 +65,37 @@ class EuXFELCurrentDataset(Dataset):
 
         if self.normalize:
             self.setup_normalization(
-                current_scaler, rf_scaler, bunch_length_scaler, formfactor_scaler
+                rf_scaler, formfactor_scaler, current_scaler, bunch_length_scaler
             )
 
     def __len__(self):
         return len(self.bunch_lengths)
 
     def __getitem__(self, index):
-        formfactor = self.formfactors[index]
         rf_settings = self.rf_settings[index]
-        bunch_length = self.bunch_lengths[index]
+        formfactor = self.formfactors[index]
         current_profile = self.current_profiles[index]
+        bunch_length = self.bunch_lengths[index]
 
         if self.normalize:
-            formfactor = self.formfactor_scaler.transform([formfactor])[0]
             rf_settings = self.rf_scaler.transform([rf_settings])[0]
-            bunch_length = self.bunch_length_scaler.transform([bunch_length])[0]
+            formfactor = self.formfactor_scaler.transform([formfactor])[0]
             current_profile = self.current_scaler.transform([current_profile])[0]
+            bunch_length = self.bunch_length_scaler.transform([bunch_length])[0]
 
-        formfactor = torch.tensor(formfactor, dtype=torch.float32)
         rf_settings = torch.tensor(rf_settings, dtype=torch.float32)
-        bunch_length = torch.tensor(bunch_length, dtype=torch.float32)
+        formfactor = torch.tensor(formfactor, dtype=torch.float32)
         current_profile = torch.tensor(current_profile, dtype=torch.float32)
+        bunch_length = torch.tensor(bunch_length, dtype=torch.float32)
 
-        return (formfactor, rf_settings, bunch_length), current_profile
+        return (rf_settings, formfactor), (current_profile, bunch_length)
 
     def setup_normalization(
         self,
-        current_scaler: Optional[StandardScaler] = None,
         rf_scaler: Optional[StandardScaler] = None,
-        bunch_length_scaler: Optional[StandardScaler] = None,
         formfactor_scaler: Optional[StandardScaler] = None,
+        current_scaler: Optional[StandardScaler] = None,
+        bunch_length_scaler: Optional[StandardScaler] = None,
     ) -> None:
         """
         Creates normalisation scalers for each of the four variables return by this
@@ -103,25 +103,25 @@ class EuXFELCurrentDataset(Dataset):
         is fitted to the data in the dataset.
         """
 
-        self.current_scaler = (
-            current_scaler
-            if current_scaler is not None
-            else StandardScaler().fit(self.current_profiles)
-        )
         self.rf_scaler = (
             rf_scaler
             if rf_scaler is not None
             else StandardScaler().fit(self.rf_settings)
         )
-        self.bunch_length_scaler = (
-            bunch_length_scaler
-            if bunch_length_scaler is not None
-            else StandardScaler().fit(self.bunch_lengths)
-        )
         self.formfactor_scaler = (
             formfactor_scaler
             if formfactor_scaler is not None
             else StandardScaler().fit(self.formfactors)
+        )
+        self.current_scaler = (
+            current_scaler
+            if current_scaler is not None
+            else StandardScaler().fit(self.current_profiles)
+        )
+        self.bunch_length_scaler = (
+            bunch_length_scaler
+            if bunch_length_scaler is not None
+            else StandardScaler().fit(self.bunch_lengths)
         )
 
 
@@ -141,18 +141,18 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         self.dataset_val = EuXFELCurrentDataset(
             stage="validation",
             normalize=True,
-            current_scaler=self.dataset_train.current_scaler,
             rf_scaler=self.dataset_train.rf_scaler,
-            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
             formfactor_scaler=self.dataset_train.formfactor_scaler,
+            current_scaler=self.dataset_train.current_scaler,
+            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
         )
         self.dataset_test = EuXFELCurrentDataset(
             stage="test",
             normalize=True,
-            current_scaler=self.dataset_train.current_scaler,
             rf_scaler=self.dataset_train.rf_scaler,
-            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
             formfactor_scaler=self.dataset_train.formfactor_scaler,
+            current_scaler=self.dataset_train.current_scaler,
+            bunch_length_scaler=self.dataset_train.bunch_length_scaler,
         )
 
     def train_dataloader(self):
@@ -265,17 +265,25 @@ class Generator(nn.Module):
         super().__init__()
 
         self.formfactor_encoder = ConvolutionalEncoder(signal_dims=240, latent_dims=10)
-        self.current_decoder = ConvolutionalDecoder(
-            latent_dims=10 + 5 + 1, signal_dims=300
+        self.scalar_spectral_combine_mlp = nn.Sequential(
+            nn.Linear(10 + 5, 50),
+            nn.LeakyReLU(),
+            nn.Linear(50, 20),
+            nn.LeakyReLU(),
+            nn.Linear(20, 10),
+        )
+        self.current_decoder = ConvolutionalDecoder(latent_dims=10, signal_dims=300)
+        self.bunch_length_decoder = nn.Sequential(
+            nn.Linear(10, 20), nn.LeakyReLU(), nn.Linear(20, 1)
         )
 
-    def forward(self, formfactor, rf_settings, bunch_length):
+    def forward(self, rf_settings, formfactor):
         encoded_formfactor = self.formfactor_encoder(formfactor)
-        latent = torch.concatenate(
-            [encoded_formfactor, bunch_length, rf_settings], dim=1
-        )
+        x = torch.concatenate([rf_settings, encoded_formfactor], dim=1)
+        latent = self.scalar_spectral_combine_mlp(x)
         current_profile = self.current_decoder(latent)
-        return current_profile
+        bunch_length = self.bunch_length_decoder(latent)
+        return current_profile, bunch_length
 
 
 class Critic(nn.Module):
@@ -296,18 +304,18 @@ class Critic(nn.Module):
         self.current_encoder = ConvolutionalEncoder(signal_dims=300, latent_dims=10)
 
         self.classifier = nn.Sequential(
-            nn.Linear(10 + 10 + 5 + 1, 50),
+            nn.Linear(5 + 10 + 10 + 1, 50),
             nn.LeakyReLU(),
             nn.Linear(50, 20),
             nn.LeakyReLU(),
             nn.Linear(20, 1),  # TODO Activation on output?
         )
 
-    def forward(self, current_profile, formfactor, rf_settings, bunch_length):
+    def forward(self, rf_settings, formfactor, current_profile, bunch_length):
         encoded_current_profile = self.current_encoder(current_profile)
         encoded_formfactor = self.formfactor_encoder(formfactor)
         x = torch.concatenate(
-            [encoded_current_profile, encoded_formfactor, bunch_length, rf_settings],
+            [rf_settings, encoded_formfactor, encoded_current_profile, bunch_length],
             dim=1,
         )
         x = self.classifier(x)
@@ -327,18 +335,14 @@ class WassersteinGANGP(L.LightningModule):
 
         self.save_hyperparameters()
         self.automatic_optimization = False
-        self.example_input_array = [
-            torch.rand(1, 240),
-            torch.rand(1, 5),
-            torch.rand(1, 1),
-        ]
+        self.example_input_array = [torch.rand(1, 5), torch.rand(1, 240)]
 
         self.generator = Generator()
         self.critic = Critic()
 
-    def forward(self, formfactor, rf_settings, bunch_length):
-        current_profile = self.generator(formfactor, rf_settings, bunch_length)
-        return current_profile
+    def forward(self, rf_settings, formfactor):
+        current_profile, bunch_length = self.generator(rf_settings, formfactor)
+        return current_profile, bunch_length
 
     def configure_optimizers(self):
         generator_optimizer = optim.Adam(self.generator.parameters(), lr=1e-3)
@@ -348,31 +352,39 @@ class WassersteinGANGP(L.LightningModule):
     def gradient_penalty_loss(
         self,
         real_current_profiles,
-        generated_current_profiles,
+        fake_current_profiles,
+        real_bunch_lengths,
+        fake_bunch_lengths,
         formfactors,
         rf_settings,
-        bunch_lengths,
     ):
         # Interpolate real and generated current profiles
-        batch_size, n_current_samples = real_current_profiles.size()
-        alpha = (
+        batch_size, num_current_samples = real_current_profiles.size()
+        alpha_1 = (
             torch.rand(batch_size, 1)
-            .repeat(1, n_current_samples)
-            .type_as(generated_current_profiles)
+            .repeat(1, num_current_samples)
+            .type_as(fake_current_profiles)
         )
         interpolated_current_profiles = (
-            alpha * real_current_profiles + (1 - alpha) * generated_current_profiles
+            alpha_1 * real_current_profiles + (1 - alpha_1) * fake_current_profiles
+        )
+        alpha_2 = torch.rand(batch_size, 1).type_as(fake_bunch_lengths)
+        interpolated_bunch_lengths = (
+            alpha_2 * real_bunch_lengths + (1 - alpha_2) * fake_bunch_lengths
         )
 
         # Calculate critic scores
         mixed_critiques = self.critic(
-            interpolated_current_profiles, formfactors, rf_settings, bunch_lengths
+            rf_settings,
+            formfactors,
+            interpolated_current_profiles,
+            interpolated_bunch_lengths,
         )
 
         # Take the gradient of the critic outputs with respect to the current profiles
         gradient = torch.autograd.grad(
             outputs=mixed_critiques,
-            inputs=interpolated_current_profiles,
+            inputs=[interpolated_current_profiles, interpolated_bunch_lengths],
             grad_outputs=torch.ones_like(mixed_critiques),
             create_graph=True,
             retain_graph=True,
@@ -383,27 +395,31 @@ class WassersteinGANGP(L.LightningModule):
         return gradient_penalty
 
     def training_step(self, batch, batch_idx):
-        (formfactors, rf_settings, bunch_lengths), real_current_profiles = batch
+        (rf_settings, formfactors), (real_current_profiles, real_bunch_lengths) = batch
 
         generator_optimizer, critic_optimizer = self.optimizers()
 
         # Train critic
         for _ in range(self.critic_iterations):
-            generated_current_profiles = self.generator(
-                formfactors, rf_settings, bunch_lengths
+            fake_current_profiles, fake_bunch_lengths = self.generator(
+                rf_settings, formfactors
             )
             critique_real = self.critic(
-                real_current_profiles, formfactors, rf_settings, bunch_lengths
+                rf_settings, formfactors, real_current_profiles, real_bunch_lengths
             )
             critique_fake = self.critic(
-                generated_current_profiles, formfactors, rf_settings, bunch_lengths
+                rf_settings,
+                formfactors,
+                fake_current_profiles,
+                fake_bunch_lengths,
             )
             gradient_penalty = self.gradient_penalty_loss(
                 real_current_profiles,
-                generated_current_profiles,
+                fake_current_profiles,
+                real_bunch_lengths,
+                fake_bunch_lengths,
                 formfactors,
                 rf_settings,
-                bunch_lengths,
             )
             critic_loss = (
                 -(torch.mean(critique_real) - torch.mean(critique_fake))
@@ -416,11 +432,14 @@ class WassersteinGANGP(L.LightningModule):
         self.log("train/critic_loss", critic_loss)
 
         # Train generator
-        generated_current_profiles = self.generator(
-            formfactors, rf_settings, bunch_lengths
+        fake_current_profiles, fake_bunch_lengths = self.generator(
+            rf_settings, formfactors
         )
         critique_fake = self.critic(
-            generated_current_profiles, formfactors, rf_settings, bunch_lengths
+            rf_settings,
+            formfactors,
+            fake_current_profiles,
+            fake_bunch_lengths,
         )
         generator_loss = -torch.mean(critique_fake)
         self.log("train/generator_loss", generator_loss)
@@ -429,16 +448,16 @@ class WassersteinGANGP(L.LightningModule):
         generator_optimizer.step()
 
     def validation_step(self, batch, batch_idx):
-        (formfactors, rf_settings, bunch_lengths), real_current_profiles = batch
+        (rf_settings, formfactors), (real_current_profiles, real_bunch_lengths) = batch
 
-        generated_current_profiles = self.generator(
-            formfactors, rf_settings, bunch_lengths
+        fake_current_profiles, fake_bunch_lengths = self.generator(
+            rf_settings, formfactors
         )
         critique_real = self.critic(
-            real_current_profiles, formfactors, rf_settings, bunch_lengths
+            rf_settings, formfactors, real_current_profiles, real_bunch_lengths
         )
         critique_fake = self.critic(
-            generated_current_profiles, formfactors, rf_settings, bunch_lengths
+            rf_settings, formfactors, fake_current_profiles, fake_bunch_lengths
         )
         wasserstein_distance = -(torch.mean(critique_real) - torch.mean(critique_fake))
         generator_loss = -torch.mean(critique_fake)
@@ -449,13 +468,16 @@ class WassersteinGANGP(L.LightningModule):
         wandb.log(
             {
                 "real_vs_generated_validation_plot": wandb.plot.line_series(
-                    xs=np.linspace(0, bunch_lengths[0], 300).tolist(),
+                    xs=[
+                        np.linspace(0, real_bunch_lengths[0], 300).tolist(),
+                        np.linspace(0, fake_bunch_lengths[0], 300).tolist(),
+                    ],
                     ys=[
                         real_current_profiles[0].tolist(),
-                        generated_current_profiles[0].tolist(),
+                        fake_current_profiles[0].tolist(),
                     ],
-                    keys=["real current", "generated current"],
-                    title="Real vs. generated currents",
+                    keys=["real current", "fake current"],
+                    title="Real vs. fake currents",
                     xname="s",
                 )
             }
