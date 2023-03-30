@@ -173,15 +173,15 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
 class ConvolutionalEncoder(nn.Module):
     """Encodes a signal to a latent vector."""
 
-    def __init__(self, signal_dims, latent_dims) -> None:
+    def __init__(self, signal_dims: int, latent_dims: int) -> None:
         super().__init__()
 
         self.convnet = nn.Sequential(
-            nn.Conv1d(1, 8, 3, stride=2, padding=1),  # 120 / 150
+            nn.Conv1d(1, 8, 3, stride=2, padding=1),
             nn.LeakyReLU(),
-            nn.Conv1d(8, 16, 3, stride=2, padding=1),  # 60 / 75
+            nn.Conv1d(8, 16, 3, stride=2, padding=1),
             nn.LeakyReLU(),
-            nn.Conv1d(16, 32, 3, stride=2, padding=1),  # 30 / 37.5 ?
+            nn.Conv1d(16, 32, 3, stride=2, padding=1),
             nn.LeakyReLU(),
         )
 
