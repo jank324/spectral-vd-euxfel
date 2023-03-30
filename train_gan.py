@@ -2,8 +2,6 @@
 # Discriminator is given bunch length and shape of real and generated example and has to
 # learn to tell them apart as real or generated
 
-# TODO Figure out (encoded) activations
-# TODO Adapt scaling in data (and models) so that strictly positive is minmax
 # TODO Pass hidden architecture to models
 
 
