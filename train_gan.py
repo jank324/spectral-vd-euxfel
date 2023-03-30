@@ -197,6 +197,7 @@ class ConvolutionalEncoder(nn.Module):
             nn.Linear(100, 50),
             nn.LeakyReLU(),
             nn.Linear(50, latent_dims),
+            nn.LeakyReLU(),
         )
 
     def forward(self, signal):
@@ -243,7 +244,6 @@ class ConvolutionalDecoder(nn.Module):
             nn.ConvTranspose1d(
                 8, 1, 3, stride=2, padding=1, output_padding=(signal_dims % 2 == 0) * 1
             ),
-            nn.ReLU(),
         )
 
     def forward(self, encoded):
@@ -284,6 +284,7 @@ class Generator(nn.Module):
             nn.Linear(50, 20),
             nn.LeakyReLU(),
             nn.Linear(20, latent_dims),
+            nn.LeakyReLU(),
         )
         self.current_decoder = ConvolutionalDecoder(
             latent_dims=latent_dims, signal_dims=num_current_samples
@@ -337,7 +338,7 @@ class Critic(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(50, 20),
             nn.LeakyReLU(),
-            nn.Linear(20, 1),  # TODO Activation on output?
+            nn.Linear(20, 1),
         )
 
     def forward(self, rf_settings, formfactor, current_profile, bunch_length):
