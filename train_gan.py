@@ -301,7 +301,7 @@ class Generator(nn.Module):
             latent_dims=latent_dims, signal_dims=num_current_samples
         )
         self.bunch_length_decoder = nn.Sequential(
-            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1), nn.ReLU()
+            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1), nn.Softplus()
         )
 
     def forward(self, rf_settings, formfactor):
