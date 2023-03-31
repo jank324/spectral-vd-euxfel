@@ -4,7 +4,6 @@
 
 # TODO Pass hidden architecture to models
 
-
 from math import ceil
 from typing import Optional
 
@@ -158,16 +157,18 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(self.dataset_train, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=5
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size)
+        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=5)
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=5)
 
     def predict_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=5)
 
 
 class ConvolutionalEncoder(nn.Module):
@@ -517,7 +518,7 @@ def main():
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
     # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
-    trainer = L.Trainer(logger=wandb_logger, fast_dev_run=True, accelerator="cpu")
+    trainer = L.Trainer(max_epochs=3, logger=wandb_logger, accelerator="cpu")
     trainer.fit(model, data_module)
 
 
