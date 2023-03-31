@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 from lightning.pytorch.loggers import WandbLogger
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
@@ -109,20 +109,29 @@ class EuXFELCurrentDataset(Dataset):
             if rf_scaler is not None
             else StandardScaler().fit(self.rf_settings)
         )
+
         self.formfactor_scaler = (
             formfactor_scaler
             if formfactor_scaler is not None
             else StandardScaler().fit(self.formfactors)
         )
+
+        current_profiles_including_zero = np.concatenate(
+            [np.zeros([1, 300]), self.current_profiles], axis=0
+        )  # Include zero to make sure in the scaler min = 0
         self.current_scaler = (
             current_scaler
             if current_scaler is not None
-            else StandardScaler().fit(self.current_profiles)
+            else MinMaxScaler().fit(current_profiles_including_zero)
         )
+
+        bunch_lengths_including_zero = np.concatenate(
+            [np.zeros([1, 1]), self.bunch_lengths], axis=0
+        )  # Include zero to make sure in the scaler min = 0
         self.bunch_length_scaler = (
             bunch_length_scaler
             if bunch_length_scaler is not None
-            else StandardScaler().fit(self.bunch_lengths)
+            else MinMaxScaler().fit(bunch_lengths_including_zero)
         )
 
 
@@ -206,7 +215,11 @@ class ConvolutionalEncoder(nn.Module):
 
 
 class ConvolutionalDecoder(nn.Module):
-    """Decodes a signal from a latent vector."""
+    """
+    Decodes a signal from a latent vector.
+
+    NOTE: Can currently only decode non-negative signals.
+    """
 
     def __init__(self, latent_dims, signal_dims) -> None:
         super().__init__()
@@ -241,6 +254,7 @@ class ConvolutionalDecoder(nn.Module):
             nn.ConvTranspose1d(
                 8, 1, 3, stride=2, padding=1, output_padding=(signal_dims % 2 == 0) * 1
             ),
+            nn.ReLU(),
         )
 
     def forward(self, encoded):
@@ -287,7 +301,7 @@ class Generator(nn.Module):
             latent_dims=latent_dims, signal_dims=num_current_samples
         )
         self.bunch_length_decoder = nn.Sequential(
-            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1)
+            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1), nn.ReLU()
         )
 
     def forward(self, rf_settings, formfactor):
