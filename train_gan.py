@@ -8,6 +8,7 @@ from math import ceil
 from typing import Optional
 
 import lightning as L
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -506,31 +507,24 @@ class WassersteinGANGP(L.LightningModule):
         self.log("validate/wasserstein_distance", wasserstein_distance)
         self.log("validate/generator_loss", generator_loss)
 
-        wandb.log(
-            {
-                "real_vs_generated_validation_plot": wandb.plot.line_series(
-                    xs=[
-                        np.linspace(
-                            -real_bunch_lengths[0][0] / 2,
-                            real_bunch_lengths[0][0] / 2,
-                            300,
-                        ).tolist(),
-                        np.linspace(
-                            -fake_bunch_lengths[0][0] / 2,
-                            fake_bunch_lengths[0][0] / 2,
-                            300,
-                        ).tolist(),
-                    ],
-                    ys=[
-                        real_current_profiles[0].tolist(),
-                        fake_current_profiles[0].tolist(),
-                    ],
-                    keys=["real current", "fake current"],
-                    title="Real vs. fake currents",
-                    xname="s",
-                )
-            }
+        fig, ax = plt.subplots()
+        ax.plot(
+            np.linspace(
+                -real_bunch_lengths[0][0] / 2,
+                real_bunch_lengths[0][0] / 2,
+                300,
+            ),
+            real_current_profiles[0],
         )
+        ax.plot(
+            np.linspace(
+                -fake_bunch_lengths[0][0] / 2,
+                fake_bunch_lengths[0][0] / 2,
+                300,
+            ),
+            fake_current_profiles[0],
+        )
+        wandb.log({"real_vs_generated_validation_plot": fig})
 
 
 def main():
