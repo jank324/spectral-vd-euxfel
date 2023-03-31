@@ -510,8 +510,16 @@ class WassersteinGANGP(L.LightningModule):
             {
                 "real_vs_generated_validation_plot": wandb.plot.line_series(
                     xs=[
-                        np.linspace(0, real_bunch_lengths[0][0], 300).tolist(),
-                        np.linspace(0, fake_bunch_lengths[0][0], 300).tolist(),
+                        np.linspace(
+                            -real_bunch_lengths[0][0] / 2,
+                            real_bunch_lengths[0][0] / 2,
+                            300,
+                        ).tolist(),
+                        np.linspace(
+                            -fake_bunch_lengths[0][0] / 2,
+                            fake_bunch_lengths[0][0] / 2,
+                            300,
+                        ).tolist(),
                     ],
                     ys=[
                         real_current_profiles[0].tolist(),
