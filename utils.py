@@ -26,4 +26,3 @@ def current2formfactor(
         )
 
     return frequencies, formfactor
-    

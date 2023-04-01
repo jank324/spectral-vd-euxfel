@@ -18,4 +18,5 @@ models
 data
 ml-lps-recon-length
 slurm-*.out
+virtual-diagnostics-euxfel-current-gan
 wandb
