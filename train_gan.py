@@ -203,26 +203,21 @@ class ConvolutionalEncoder(nn.Module):
             nn.LeakyReLU(),
             nn.Conv1d(8, 16, 3, stride=2, padding=1),
             nn.LeakyReLU(),
-            nn.Conv1d(16, 32, 3, stride=2, padding=1),
+            nn.Conv1d(16, 1, 3, stride=2, padding=1),
             nn.LeakyReLU(),
         )
 
         self.flatten = nn.Flatten()
 
-        self.mlp = nn.Sequential(
-            nn.Linear(ceil(signal_dims / 8) * 32, 100),
-            nn.LeakyReLU(),
-            nn.Linear(100, 50),
-            nn.LeakyReLU(),
-            nn.Linear(50, latent_dims),
-            nn.LeakyReLU(),
+        self.linear = nn.Sequential(
+            nn.Linear(ceil(signal_dims / 8) * 1, latent_dims), nn.LeakyReLU()
         )
 
     def forward(self, signal):
         x = torch.unsqueeze(signal, dim=1)
         x = self.convnet(x)
         x = self.flatten(x)
-        encoded = self.mlp(x)
+        encoded = self.linear(x)
         return encoded
 
 
@@ -236,22 +231,17 @@ class ConvolutionalDecoder(nn.Module):
     def __init__(self, latent_dims, signal_dims) -> None:
         super().__init__()
 
-        self.mlp = nn.Sequential(
-            nn.Linear(latent_dims, 50),
-            nn.LeakyReLU(),
-            nn.Linear(50, 100),
-            nn.LeakyReLU(),
-            nn.Linear(100, ceil(signal_dims / 8) * 32),
-            nn.LeakyReLU(),
+        self.linear = nn.Sequential(
+            nn.Linear(latent_dims, ceil(signal_dims / 8) * 1), nn.LeakyReLU()
         )
 
         self.unflatten = nn.Unflatten(
-            dim=1, unflattened_size=(32, ceil(signal_dims / 8))
+            dim=1, unflattened_size=(1, ceil(signal_dims / 8))
         )
 
         self.convnet = nn.Sequential(
             nn.ConvTranspose1d(
-                32,
+                1,
                 16,
                 3,
                 stride=2,
@@ -270,7 +260,7 @@ class ConvolutionalDecoder(nn.Module):
         )
 
     def forward(self, encoded):
-        x = self.mlp(encoded)
+        x = self.linear(encoded)
         x = self.unflatten(x)
         x = self.convnet(x)
         signal = torch.squeeze(x, dim=1)
@@ -578,7 +568,7 @@ def main():
     trainer = L.Trainer(
         max_epochs=3,
         logger=wandb_logger,
-        accelerator="auto",
+        accelerator="cpu",
         devices="auto",
         log_every_n_steps=50,
     )
