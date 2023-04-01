@@ -398,8 +398,8 @@ class WassersteinGANGP(L.LightningModule):
         return current_profile, bunch_length
 
     def configure_optimizers(self):
-        generator_optimizer = optim.Adam(self.generator.parameters(), lr=1e-3)
-        critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
+        generator_optimizer = optim.RMSprop(self.generator.parameters(), lr=1e-3)
+        critic_optimizer = optim.RMSprop(self.critic.parameters(), lr=1e-3)
         return generator_optimizer, critic_optimizer
 
     def gradient_penalty_loss(
