@@ -507,24 +507,25 @@ class WassersteinGANGP(L.LightningModule):
         self.log("validate/wasserstein_distance", wasserstein_distance)
         self.log("validate/generator_loss", generator_loss)
 
-        fig, ax = plt.subplots()
-        ax.plot(
-            np.linspace(
-                -real_bunch_lengths[0][0] / 2,
-                real_bunch_lengths[0][0] / 2,
-                300,
-            ),
-            real_current_profiles[0],
-        )
-        ax.plot(
-            np.linspace(
-                -fake_bunch_lengths[0][0] / 2,
-                fake_bunch_lengths[0][0] / 2,
-                300,
-            ),
-            fake_current_profiles[0],
-        )
-        wandb.log({"real_vs_generated_validation_plot": fig})
+        if batch_idx == 0:
+            fig, ax = plt.subplots()
+            ax.plot(
+                np.linspace(
+                    -real_bunch_lengths[0][0] / 2,
+                    real_bunch_lengths[0][0] / 2,
+                    300,
+                ),
+                real_current_profiles[0],
+            )
+            ax.plot(
+                np.linspace(
+                    -fake_bunch_lengths[0][0] / 2,
+                    fake_bunch_lengths[0][0] / 2,
+                    300,
+                ),
+                fake_current_profiles[0],
+            )
+            wandb.log({"real_vs_generated_validation_plot": fig})
 
 
 def main():
