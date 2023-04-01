@@ -388,8 +388,8 @@ class WassersteinGANGP(L.LightningModule):
         return current_profile, bunch_length
 
     def configure_optimizers(self):
-        generator_optimizer = optim.RMSprop(self.generator.parameters(), lr=1e-3)
-        critic_optimizer = optim.RMSprop(self.critic.parameters(), lr=1e-3)
+        generator_optimizer = optim.RMSprop(self.generator.parameters(), lr=5e-5)
+        critic_optimizer = optim.RMSprop(self.critic.parameters(), lr=5e-5)
         return generator_optimizer, critic_optimizer
 
     def gradient_penalty_loss(
@@ -559,7 +559,7 @@ class WassersteinGANGP(L.LightningModule):
 
 
 def main():
-    data_module = EuXFELCurrentDataModule(batch_size=64, num_workers=10)
+    data_module = EuXFELCurrentDataModule(batch_size=64, num_workers=5)
     model = WassersteinGANGP()
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
