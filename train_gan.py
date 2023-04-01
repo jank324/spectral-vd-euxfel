@@ -4,6 +4,7 @@
 
 # TODO Pass hidden architecture to models
 
+import time
 from math import ceil
 from typing import Optional
 
@@ -168,17 +169,17 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=5
+            self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=40
         )
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=5)
+        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=40)
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=5)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=40)
 
     def predict_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=5)
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=40)
 
 
 class ConvolutionalEncoder(nn.Module):
@@ -507,8 +508,8 @@ class WassersteinGANGP(L.LightningModule):
         wasserstein_distance = -(torch.mean(critique_real) - torch.mean(critique_fake))
         generator_loss = -torch.mean(critique_fake)
 
-        self.log("validate/wasserstein_distance", wasserstein_distance)
-        self.log("validate/generator_loss", generator_loss)
+        self.log("validate/wasserstein_distance", wasserstein_distance, sync_dist=True)
+        self.log("validate/generator_loss", generator_loss, sync_dist=True)
 
         if batch_idx == 0:
             self.log_current_profile_sample_plot(
@@ -529,6 +530,10 @@ class WassersteinGANGP(L.LightningModule):
         Logs a plot comparing the real current profile to the generated one to
         Weights & Biases.
         """
+        real_current_profile_batch = real_current_profile_batch.cpu().detach().numpy()
+        real_bunch_length_batch = real_bunch_length_batch.cpu().detach().numpy()
+        fake_current_profile_batch = fake_current_profile_batch.cpu().detach().numpy()
+        fake_bunch_length_batch = fake_bunch_length_batch.cpu().detach().numpy()
 
         fig, axs = plt.subplots(2, 4)
         axs = axs.flatten()
@@ -554,14 +559,22 @@ class WassersteinGANGP(L.LightningModule):
 
 
 def main():
-    data_module = EuXFELCurrentDataModule(batch_size=32)
+    data_module = EuXFELCurrentDataModule(batch_size=64)
     model = WassersteinGANGP()
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
     # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
-    trainer = L.Trainer(max_epochs=3, logger=wandb_logger, accelerator="cpu")
+    trainer = L.Trainer(
+        max_epochs=200,
+        logger=wandb_logger,
+        accelerator="auto",
+        devices="auto",
+        log_every_n_steps=20,
+    )
     trainer.fit(model, data_module)
+
+    time.sleep(10)
 
 
 if __name__ == "__main__":
