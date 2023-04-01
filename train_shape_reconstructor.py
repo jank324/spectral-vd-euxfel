@@ -14,9 +14,9 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from utils import current2formfactor
 
 
-class LengthReconstructionDataset(Dataset):
+class ShapeReconstructionDataset(Dataset):
     """
-    Dataset for reconstructing the bunch length from RF settings and the THz spectrum.
+    Dataset for reconstructing the bunch shape from RF settings and the THz spectrum.
     """
 
     def __init__(
@@ -24,13 +24,13 @@ class LengthReconstructionDataset(Dataset):
         path: Union[Path, str],
         normalize_rf: bool = True,
         normalize_formfactors: bool = True,
-        normalize_lengths: bool = True,
+        normalize_shapes: bool = True,
     ) -> None:
         self.normalize_rf = normalize_rf
         self.normalize_formfactors = normalize_formfactors
-        self.normalize_lengths = normalize_lengths
+        self.normalize_shapes = normalize_shapes
 
-        self.rf_settings, self.formfactors, self.bunch_lengths = self.load_data(path)
+        self.rf_settings, self.formfactors, self.shapes = self.load_data(path)
 
         if self.normalize_rf:
             self.rf_scaler = MinMaxScaler().fit(self.rf_settings)
@@ -38,13 +38,13 @@ class LengthReconstructionDataset(Dataset):
         if self.normalize_formfactors:
             self.formfactor_scaler = MinMaxScaler().fit(self.formfactors)
             self.formfactors = self.formfactor_scaler.transform(self.formfactors)
-        if self.normalize_lengths:
-            self.length_scaler = MinMaxScaler().fit(self.bunch_lengths)
-            self.bunch_lengths = self.length_scaler.transform(self.bunch_lengths)
+        if self.normalize_shapes:
+            self.shape_scaler = MinMaxScaler().fit(self.shapes)
+            self.shapes = self.shape_scaler.transform(self.shapes)
 
         self.rf_settings = torch.tensor(self.rf_settings, dtype=torch.float32)
         self.formfactors = torch.tensor(self.formfactors, dtype=torch.float32)
-        self.bunch_lengths = torch.tensor(self.bunch_lengths, dtype=torch.float32)
+        self.shapes = torch.tensor(self.shapes, dtype=torch.float32)
 
     def load_data(
         self, path: Union[Path, str]
@@ -61,8 +61,6 @@ class LengthReconstructionDataset(Dataset):
         ss = np.stack(
             [np.linspace(0, 300 * df.loc[i, "slice_width"], num=300) for i in df.index]
         )
-        bunch_lengths_m = np.expand_dims(ss.max(axis=1) - ss.min(), axis=1)
-
         currents = np.stack(df["slice_I"].values)
 
         formfactors = np.array(
@@ -74,22 +72,22 @@ class LengthReconstructionDataset(Dataset):
             ]
         )
 
-        return rf_settings, formfactors, bunch_lengths_m
+        return rf_settings, formfactors, currents
 
     def __len__(self) -> int:
-        return len(self.bunch_lengths)
+        return len(self.shapes)
 
     def __getitem__(
         self, index: int
     ) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         rf_setting = self.rf_settings[index]
         formfactor = self.formfactors[index]
-        bunch_length = self.bunch_lengths[index]
+        shape = self.shapes[index]
 
-        return (rf_setting, formfactor), bunch_length
+        return (rf_setting, formfactor), shape
 
 
-class LengthReconstructor(pl.LightningModule):
+class ShapeReconstructor(pl.LightningModule):
     """Neural networks for reconstructing currents at EuXFEL."""
 
     def __init__(self) -> None:
@@ -102,7 +100,7 @@ class LengthReconstructor(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(100, 50),
             nn.ReLU(),
-            nn.Linear(50, 1),
+            nn.Linear(50, 300),
             nn.ReLU(),
         )
 
@@ -136,7 +134,7 @@ class LengthReconstructor(pl.LightningModule):
 
 
 def main() -> None:
-    dataset = LengthReconstructionDataset("data/zihan/data_20220905.pkl")
+    dataset = ShapeReconstructionDataset("data/zihan/data_20220905.pkl")
     train_dataset, val_dataset = random_split(dataset, [0.8, 0.2])
 
     train_loader = DataLoader(
@@ -144,9 +142,9 @@ def main() -> None:
     )
     val_loader = DataLoader(val_dataset, batch_size=64, num_workers=40)
 
-    model = LengthReconstructor()
+    model = ShapeReconstructor()
 
-    wandb_logger = WandbLogger(project="ml-lps-recon-length")
+    wandb_logger = WandbLogger(project="ml-lps-recon-shape")
 
     trainer = pl.Trainer(max_epochs=1000, accelerator="auto", logger=wandb_logger)
     trainer.fit(model, train_loader, val_loader)
