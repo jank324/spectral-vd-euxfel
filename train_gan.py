@@ -143,10 +143,11 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
     settings with bunch lengths also given as an input to the prediction.
     """
 
-    def __init__(self, batch_size=32, normalize=False):
+    def __init__(self, batch_size=32, normalize=False, num_workers=10):
         super().__init__()
         self.batch_size = batch_size
         self.normalize = normalize
+        self.num_workers = num_workers
 
     def setup(self, stage):
         self.dataset_train = EuXFELCurrentDataset(stage="train", normalize=True)
@@ -169,17 +170,26 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=40
+            self.dataset_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
         )
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=40)
+        return DataLoader(
+            self.dataset_val, batch_size=self.batch_size, num_workers=self.num_workers
+        )
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=40)
+        return DataLoader(
+            self.dataset_test, batch_size=self.batch_size, num_workers=self.num_workers
+        )
 
     def predict_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.batch_size, num_workers=40)
+        return DataLoader(
+            self.dataset_test, batch_size=self.batch_size, num_workers=self.num_workers
+        )
 
 
 class ConvolutionalEncoder(nn.Module):
@@ -559,18 +569,18 @@ class WassersteinGANGP(L.LightningModule):
 
 
 def main():
-    data_module = EuXFELCurrentDataModule(batch_size=64)
+    data_module = EuXFELCurrentDataModule(batch_size=64, num_workers=10)
     model = WassersteinGANGP()
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
     # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
     trainer = L.Trainer(
-        max_epochs=200,
+        max_epochs=3,
         logger=wandb_logger,
         accelerator="auto",
         devices="auto",
-        log_every_n_steps=20,
+        log_every_n_steps=50,
     )
     trainer.fit(model, data_module)
 
