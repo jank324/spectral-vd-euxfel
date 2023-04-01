@@ -527,24 +527,27 @@ class WassersteinGANGP(L.LightningModule):
         Weights & Biases.
         """
 
-        fig, ax = plt.subplots()
-        ax.plot(
-            np.linspace(
-                -real_bunch_length_batch[0][0] / 2,
-                real_bunch_length_batch[0][0] / 2,
-                300,
-            ),
-            real_current_profile_batch[0],
-        )
-        ax.plot(
-            np.linspace(
-                -fake_bunch_length_batch[0][0] / 2,
-                fake_bunch_length_batch[0][0] / 2,
-                300,
-            ),
-            fake_current_profile_batch[0],
-        )
-        wandb.log({"real_vs_generated_validation_plot": fig})
+        fig, axs = plt.subplots(2, 4)
+        axs = axs.flatten()
+        for i in range(8):
+            ss_real = np.linspace(
+                -real_bunch_length_batch[i][0] / 2,
+                real_bunch_length_batch[i][0] / 2,
+                num=300,
+            )
+            axs[i].plot(ss_real, real_current_profile_batch[i], label="Real")
+
+            ss_fake = np.linspace(
+                -fake_bunch_length_batch[i][0] / 2,
+                fake_bunch_length_batch[i][0] / 2,
+                num=300,
+            )
+            axs[i].plot(ss_fake, fake_current_profile_batch[i], label="Fake")
+
+        handles, labels = axs[0].get_legend_handles_labels()
+        fig.legend(handles, labels)
+
+        wandb.log({"real_vs_fake_validation_plot": fig})
 
 
 def main():
