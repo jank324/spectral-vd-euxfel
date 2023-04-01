@@ -455,6 +455,9 @@ class WassersteinGANGP(L.LightningModule):
                 fake_current_profiles,
                 fake_bunch_lengths,
             )
+            wasserstein_distance = -(
+                torch.mean(critique_real) - torch.mean(critique_fake)
+            )
             gradient_penalty = self.gradient_penalty_loss(
                 real_current_profiles,
                 fake_current_profiles,
@@ -464,12 +467,12 @@ class WassersteinGANGP(L.LightningModule):
                 rf_settings,
             )
             critic_loss = (
-                -(torch.mean(critique_real) - torch.mean(critique_fake))
-                + self.lambda_gradient_penalty * gradient_penalty
+                wasserstein_distance + self.lambda_gradient_penalty * gradient_penalty
             )
             critic_optimizer.zero_grad()
             self.manual_backward(critic_loss)
             critic_optimizer.step()
+        self.log("train/wasserstein_distance", wasserstein_distance)
         self.log("train/gradient_penalty", gradient_penalty)
         self.log("train/critic_loss", critic_loss)
 
