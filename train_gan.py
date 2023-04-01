@@ -508,24 +508,43 @@ class WassersteinGANGP(L.LightningModule):
         self.log("validate/generator_loss", generator_loss)
 
         if batch_idx == 0:
-            fig, ax = plt.subplots()
-            ax.plot(
-                np.linspace(
-                    -real_bunch_lengths[0][0] / 2,
-                    real_bunch_lengths[0][0] / 2,
-                    300,
-                ),
-                real_current_profiles[0],
+            self.log_current_profile_sample_plot(
+                real_current_profiles,
+                real_bunch_lengths,
+                fake_current_profiles,
+                fake_bunch_lengths,
             )
-            ax.plot(
-                np.linspace(
-                    -fake_bunch_lengths[0][0] / 2,
-                    fake_bunch_lengths[0][0] / 2,
-                    300,
-                ),
-                fake_current_profiles[0],
-            )
-            wandb.log({"real_vs_generated_validation_plot": fig})
+
+    def log_current_profile_sample_plot(
+        self,
+        real_current_profile_batch,
+        real_bunch_length_batch,
+        fake_current_profile_batch,
+        fake_bunch_length_batch,
+    ):
+        """
+        Logs a plot comparing the real current profile to the generated one to
+        Weights & Biases.
+        """
+
+        fig, ax = plt.subplots()
+        ax.plot(
+            np.linspace(
+                -real_bunch_length_batch[0][0] / 2,
+                real_bunch_length_batch[0][0] / 2,
+                300,
+            ),
+            real_current_profile_batch[0],
+        )
+        ax.plot(
+            np.linspace(
+                -fake_bunch_length_batch[0][0] / 2,
+                fake_bunch_length_batch[0][0] / 2,
+                300,
+            ),
+            fake_current_profile_batch[0],
+        )
+        wandb.log({"real_vs_generated_validation_plot": fig})
 
 
 def main():
