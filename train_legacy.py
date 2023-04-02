@@ -8,7 +8,7 @@ from legacy import SupervisedCurrentProfileInference
 
 
 def main():
-    config = {"batch_size": 64, "learning_rate": 1e-3, "max_epochs": 10}
+    config = {"batch_size": 64, "learning_rate": 1e-3, "max_epochs": 10_000}
 
     wandb_logger = WandbLogger(
         project="virtual-diagnostics-euxfel-current-legacy", config=config
