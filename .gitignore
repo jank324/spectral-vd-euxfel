@@ -19,5 +19,6 @@ data
 ml-lps-recon-length
 slurm-*.out
 virtual-diagnostics-euxfel-current-gan
+virtual-diagnostics-euxfel-current-legacy
 virtual-diagnostics-euxfel-current-supervised
 wandb
