@@ -4,23 +4,22 @@ import lightning as L
 from lightning.pytorch.loggers import WandbLogger
 
 from dataset import EuXFELCurrentDataModule
-from supervised_cnn import CNNCurrentReconstructor
+from supervised import SupervisedCurrentProfileInference
 
 
 def main():
     data_module = EuXFELCurrentDataModule(batch_size=64, num_workers=5)
-    model = CNNCurrentReconstructor(learning_rate=1e-3, leaky_relu_negative_slope=0.01)
+    model = SupervisedCurrentProfileInference(learning_rate=1e-3, negative_slope=0.01)
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-supervised")
 
-    # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
     trainer = L.Trainer(
-        max_epochs=100,
+        max_epochs=5,
         logger=wandb_logger,
-        accelerator="auto",
+        accelerator="cpu",
         devices="auto",
-        log_every_n_steps=1,
-        overfit_batches=1,
+        log_every_n_steps=50,
+        fast_dev_run=True,
     )
     trainer.fit(model, data_module)
 
