@@ -41,10 +41,6 @@ class ConvBlock1d(nn.Module):
     ):
         super().__init__()
 
-        print(f"CONVBLOCK1D INIT {in_channels = }")
-        print(f"CONVBLOCK1D INIT {out_channels = }")
-        print(f"CONVBLOCK1D INIT {negative_slope = }")
-
         self.block = nn.Sequential(
             nn.Conv1d(
                 in_channels,
@@ -59,7 +55,6 @@ class ConvBlock1d(nn.Module):
         )
 
     def forward(self, x):
-        print(f"CONVBLOCK1D FORWARD {x.size() = }")
         return self.block(x)
 
 
@@ -69,9 +64,6 @@ class ConvEncoder1d(nn.Module):
     def __init__(self, feature_maps: int = 8, negative_slope: float = 0.01):
         super().__init__()
 
-        print(f"CONVENCODER1D INIT {feature_maps = }")
-        print(f"CONVENCODER1D INIT {negative_slope = }")
-
         self.encoder = nn.Sequential(
             ConvBlock1d(1, feature_maps, negative_slope),
             ConvBlock1d(feature_maps, feature_maps * 2, negative_slope),
@@ -80,11 +72,8 @@ class ConvEncoder1d(nn.Module):
         )
 
     def forward(self, decoded):
-        print(f"CONVENCODER1D FORWARD {decoded.size() = }")
         x = torch.unsqueeze(decoded, dim=1)
-        print(f"CONVENCODER1D FORWARD {x.size() = }")
         encoded = self.encoder(x)
-        print(f"CONVENCODER1D FORWARD {encoded.size() = }")
         return encoded
 
 
@@ -102,11 +91,6 @@ class ConvTransposeBlock1d(nn.Module):
         negative_slope: float = 0.01,
     ):
         super().__init__()
-
-        print(f"CONVTRANSPOSEBLOCK1D INIT {in_channels = }")
-        print(f"CONVTRANSPOSEBLOCK1D INIT {out_channels = }")
-        print(f"CONVTRANSPOSEBLOCK1D INIT {output_padding = }")
-        print(f"CONVTRANSPOSEBLOCK1D INIT {negative_slope = }")
 
         self.block = nn.Sequential(
             nn.ConvTranspose1d(
@@ -167,11 +151,8 @@ class ConvDecoder1d(nn.Module):
         )
 
     def forward(self, encoded):
-        print(f"CONVDECODER1D FORWARD {encoded.size() = }")
         x = self.decoder(encoded)
-        print(f"CONVDECODER1D FORWARD {x.size() = }")
         decoded = torch.squeeze(x, dim=1)
-        print(f"CONVDECODER1D FORWARD {decoded.size() = }")
         return decoded
 
 
@@ -218,18 +199,11 @@ class CurrentProfilePredictor(nn.Module):
         )
 
     def forward(self, rf_settings, formfactor):
-        print(f"CURRENTPROFILEPREDICTOR FORWARD {rf_settings.size() = }")
-        print(f"CURRENTPROFILEPREDICTOR FORWARD {formfactor.size() = }")
         x = self.formfactor_encoder(formfactor)
-        print(f"CURRENTPROFILEPREDICTOR FORWARD after encoder {x.size() = }")
         x = torch.concatenate([rf_settings, x], dim=1)
-        print(f"CURRENTPROFILEPREDICTOR FORWARD concatenated {x.size() = }")
         x = self.mlp(x)
-        print(f"CURRENTPROFILEPREDICTOR FORWARD after mlp {x.size() = }")
         current_profile = self.current_decoder(x)
-        print(f"CURRENTPROFILEPREDICTOR FORWARD {current_profile.size() = }")
         bunch_length = self.bunch_length_decoder(x)
-        print(f"CURRENTPROFILEPREDICTOR FORWARD {bunch_length.size() = }")
         return current_profile, bunch_length
 
 
