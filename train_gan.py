@@ -3,6 +3,7 @@
 # learn to tell them apart as real or generated
 
 # TODO Pass hidden architecture to models
+# TODO Only ReLU not leaky ReLU in Generator accrding to DC GAN paper
 
 import time
 from math import ceil
@@ -17,6 +18,7 @@ from lightning.pytorch.loggers import WandbLogger
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
+from torchmetrics.functional import mean_absolute_error
 
 import wandb
 from utils import current2formfactor
@@ -195,22 +197,31 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
 class ConvolutionalEncoder(nn.Module):
     """Encodes a signal to a latent vector."""
 
-    def __init__(self, signal_dims: int, latent_dims: int) -> None:
+    def __init__(
+        self,
+        signal_dims: int,
+        latent_dims: int,
+        norm: nn.Module = nn.BatchNorm1d,
+        leaky_relu_negative_slope: float = 0.2,
+    ) -> None:
         super().__init__()
 
         self.convnet = nn.Sequential(
-            nn.Conv1d(1, 8, 3, stride=2, padding=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(8, 16, 3, stride=2, padding=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(16, 1, 3, stride=2, padding=1),
-            nn.LeakyReLU(),
+            nn.Conv1d(1, 8, 3, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(leaky_relu_negative_slope),
+            nn.Conv1d(8, 16, 3, stride=2, padding=1, bias=False),
+            norm(16, affine=True),
+            nn.LeakyReLU(leaky_relu_negative_slope),
+            nn.Conv1d(16, 1, 3, stride=2, padding=1, bias=False),
+            norm(1, affine=True),
+            nn.LeakyReLU(leaky_relu_negative_slope),
         )
 
         self.flatten = nn.Flatten()
 
         self.linear = nn.Sequential(
-            nn.Linear(ceil(signal_dims / 8) * 1, latent_dims), nn.LeakyReLU()
+            nn.Linear(ceil(signal_dims / 8) * 1, latent_dims),
+            nn.LeakyReLU(leaky_relu_negative_slope),
         )
 
     def forward(self, signal):
@@ -228,11 +239,14 @@ class ConvolutionalDecoder(nn.Module):
     NOTE: Can currently only decode non-negative signals.
     """
 
-    def __init__(self, latent_dims, signal_dims) -> None:
+    def __init__(
+        self, latent_dims: int, signal_dims: int, leaky_relu_negative_slope: float = 0.2
+    ) -> None:
         super().__init__()
 
         self.linear = nn.Sequential(
-            nn.Linear(latent_dims, ceil(signal_dims / 8) * 1), nn.LeakyReLU()
+            nn.Linear(latent_dims, ceil(signal_dims / 8) * 1),
+            nn.LeakyReLU(leaky_relu_negative_slope),
         )
 
         self.unflatten = nn.Unflatten(
@@ -247,14 +261,28 @@ class ConvolutionalDecoder(nn.Module):
                 stride=2,
                 padding=1,
                 output_padding=(signal_dims % 8 == 0) * 1,
+                bias=False,
             ),
-            nn.LeakyReLU(),
+            nn.BatchNorm1d(16),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.ConvTranspose1d(
-                16, 8, 3, stride=2, padding=1, output_padding=(signal_dims % 4 == 0) * 1
+                16,
+                8,
+                3,
+                stride=2,
+                padding=1,
+                output_padding=(signal_dims % 4 == 0) * 1,
+                bias=False,
             ),
-            nn.LeakyReLU(),
+            nn.BatchNorm1d(8),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.ConvTranspose1d(
-                8, 1, 3, stride=2, padding=1, output_padding=(signal_dims % 2 == 0) * 1
+                8,
+                1,
+                3,
+                stride=2,
+                padding=1,
+                output_padding=(signal_dims % 2 == 0) * 1,
             ),
             nn.ReLU(),
         )
@@ -285,25 +313,34 @@ class Generator(nn.Module):
         num_current_samples: int = 300,
         encoded_formfactor_dims: int = 10,
         latent_dims: int = 10,
+        leaky_relu_negative_slope: float = 0.2,
     ) -> None:
         super().__init__()
 
         self.formfactor_encoder = ConvolutionalEncoder(
-            signal_dims=num_formfactor_samples, latent_dims=encoded_formfactor_dims
+            signal_dims=num_formfactor_samples,
+            latent_dims=encoded_formfactor_dims,
+            norm=nn.BatchNorm1d,
+            leaky_relu_negative_slope=leaky_relu_negative_slope,
         )
         self.scalar_spectral_combine_mlp = nn.Sequential(
             nn.Linear(encoded_formfactor_dims + num_rf_settings, 50),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.Linear(50, 20),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.Linear(20, latent_dims),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(leaky_relu_negative_slope),
         )
         self.current_decoder = ConvolutionalDecoder(
-            latent_dims=latent_dims, signal_dims=num_current_samples
+            latent_dims=latent_dims,
+            signal_dims=num_current_samples,
+            leaky_relu_negative_slope=leaky_relu_negative_slope,
         )
         self.bunch_length_decoder = nn.Sequential(
-            nn.Linear(latent_dims, 20), nn.LeakyReLU(), nn.Linear(20, 1), nn.Softplus()
+            nn.Linear(latent_dims, 20),
+            nn.LeakyReLU(leaky_relu_negative_slope),
+            nn.Linear(20, 1),
+            nn.Softplus(),
         )
 
     def forward(self, rf_settings, formfactor):
@@ -333,14 +370,21 @@ class Critic(nn.Module):
         num_current_samples: int = 300,
         encoded_formfactor_dims: int = 10,
         encoded_current_dims: int = 10,
+        leaky_relu_negative_slope: float = 0.2,
     ) -> None:
         super().__init__()
 
         self.formfactor_encoder = ConvolutionalEncoder(
-            signal_dims=num_formfactor_samples, latent_dims=encoded_formfactor_dims
+            signal_dims=num_formfactor_samples,
+            latent_dims=encoded_formfactor_dims,
+            norm=nn.InstanceNorm1d,
+            leaky_relu_negative_slope=leaky_relu_negative_slope,
         )
         self.current_encoder = ConvolutionalEncoder(
-            signal_dims=num_current_samples, latent_dims=encoded_current_dims
+            signal_dims=num_current_samples,
+            latent_dims=encoded_current_dims,
+            norm=nn.InstanceNorm1d,
+            leaky_relu_negative_slope=leaky_relu_negative_slope,
         )
 
         classifier_input_dims = (
@@ -348,9 +392,9 @@ class Critic(nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Linear(classifier_input_dims, 50),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.Linear(50, 20),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(leaky_relu_negative_slope),
             nn.Linear(20, 1),
         )
 
@@ -365,31 +409,53 @@ class Critic(nn.Module):
         return x
 
 
+def initialize_weights(model):
+    """
+    Initialise the weights of `Conv1d`, `ConvTranspose1d` and `BatchNorm1d` layers in
+    `model` according to DCGAN paper.
+    """
+    for m in model.modules():
+        if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.BatchNorm1d)):
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+
+
 class WassersteinGANGP(L.LightningModule):
     """Wasserstein GAN with Gradient Penalty for infering current profile at EuXFEL."""
 
     def __init__(
-        self, critic_iterations: int = 5, lambda_gradient_penalty: float = 10.0
+        self,
+        critic_iterations: int = 5,
+        lambda_gradient_penalty: float = 10.0,
+        learning_rate=1e-4,
+        leaky_relu_negative_slope: float = 0.2,
     ):
         super().__init__()
 
         self.critic_iterations = critic_iterations
         self.lambda_gradient_penalty = lambda_gradient_penalty
+        self.learning_rate = learning_rate
 
         self.save_hyperparameters()
         self.automatic_optimization = False
         self.example_input_array = [torch.rand(1, 5), torch.rand(1, 240)]
 
-        self.generator = Generator()
-        self.critic = Critic()
+        self.generator = Generator(leaky_relu_negative_slope=leaky_relu_negative_slope)
+        self.critic = Critic(leaky_relu_negative_slope=leaky_relu_negative_slope)
+
+        initialize_weights(self.generator)
+        initialize_weights(self.critic)
 
     def forward(self, rf_settings, formfactor):
         current_profile, bunch_length = self.generator(rf_settings, formfactor)
         return current_profile, bunch_length
 
     def configure_optimizers(self):
-        generator_optimizer = optim.RMSprop(self.generator.parameters(), lr=5e-5)
-        critic_optimizer = optim.RMSprop(self.critic.parameters(), lr=5e-5)
+        generator_optimizer = optim.Adam(
+            self.generator.parameters(), lr=self.learning_rate, betas=(0.0, 0.9)
+        )
+        critic_optimizer = optim.Adam(
+            self.critic.parameters(), lr=self.learning_rate, betas=(0.0, 0.9)
+        )
         return generator_optimizer, critic_optimizer
 
     def gradient_penalty_loss(
@@ -487,6 +553,10 @@ class WassersteinGANGP(L.LightningModule):
         )
         generator_loss = -torch.mean(critique_fake)
         self.log("train/generator_loss", generator_loss)
+        self.log(
+            "train/bunch_length_mean_absolute_error",
+            mean_absolute_error(fake_bunch_lengths, real_bunch_lengths),
+        )
         generator_optimizer.zero_grad()
         self.manual_backward(generator_loss)
         generator_optimizer.step()
@@ -508,6 +578,10 @@ class WassersteinGANGP(L.LightningModule):
 
         self.log("validate/wasserstein_loss", wasserstein_loss, sync_dist=True)
         self.log("validate/generator_loss", generator_loss, sync_dist=True)
+        self.log(
+            "validate/bunch_length_mean_absolute_error",
+            mean_absolute_error(fake_bunch_lengths, real_bunch_lengths),
+        )
 
         if batch_idx == 0:
             self.log_current_profile_sample_plot(
@@ -558,13 +632,18 @@ class WassersteinGANGP(L.LightningModule):
 
 def main():
     data_module = EuXFELCurrentDataModule(batch_size=64, num_workers=5)
-    model = WassersteinGANGP()
+    model = WassersteinGANGP(
+        critic_iterations=5,
+        lambda_gradient_penalty=10,
+        learning_rate=1e-4,
+        leaky_relu_negative_slope=0.2,
+    )
 
     wandb_logger = WandbLogger(project="virtual-diagnostics-euxfel-current-gan")
 
     # TODO Fix errors raised on accelerator="mps" -> PyTorch pull request merged
     trainer = L.Trainer(
-        max_epochs=3,
+        max_epochs=10,
         logger=wandb_logger,
         accelerator="cpu",
         devices="auto",
