@@ -138,10 +138,12 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         self.num_workers = num_workers
 
     def setup(self, stage):
-        self.dataset_train = EuXFELCurrentDataset(stage="train", normalize=True)
+        self.dataset_train = EuXFELCurrentDataset(
+            stage="train", normalize=self.normalize
+        )
         self.dataset_val = EuXFELCurrentDataset(
             stage="validation",
-            normalize=True,
+            normalize=self.normalize,
             rf_scaler=self.dataset_train.rf_scaler,
             formfactor_scaler=self.dataset_train.formfactor_scaler,
             current_scaler=self.dataset_train.current_scaler,
@@ -149,7 +151,7 @@ class EuXFELCurrentDataModule(L.LightningDataModule):
         )
         self.dataset_test = EuXFELCurrentDataset(
             stage="test",
-            normalize=True,
+            normalize=self.normalize,
             rf_scaler=self.dataset_train.rf_scaler,
             formfactor_scaler=self.dataset_train.formfactor_scaler,
             current_scaler=self.dataset_train.current_scaler,
