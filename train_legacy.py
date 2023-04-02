@@ -8,11 +8,7 @@ from legacy import SupervisedCurrentProfileInference
 
 
 def main():
-    config = {
-        "batch_size": 64,
-        "learning_rate": 1e-3,
-        "max_epochs": 5,
-    }
+    config = {"batch_size": 64, "learning_rate": 1e-3, "max_epochs": 10}
 
     wandb_logger = WandbLogger(
         project="virtual-diagnostics-euxfel-current-legacy", config=config
@@ -20,7 +16,7 @@ def main():
     config = dict(wandb_logger.experiment.config)
 
     data_module = EuXFELCurrentDataModule(
-        batch_size=config["batch_size"], num_workers=5, normalize=True
+        batch_size=config["batch_size"], num_workers=0, normalize=True
     )
     model = SupervisedCurrentProfileInference(
         learning_rate=config["learning_rate"],

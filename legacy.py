@@ -35,9 +35,9 @@ class MLPCurrentPredictor(nn.Module):
         )
 
         self.current_profile_layer = nn.Sequential(
-            nn.Linear(50, current_samples), nn.ReLU()
+            nn.Linear(50, current_samples), nn.Softplus()
         )
-        self.bunch_length_layer = nn.Sequential(nn.Linear(50, 1), nn.ReLU())
+        self.bunch_length_layer = nn.Sequential(nn.Linear(50, 1), nn.Softplus())
 
     def forward(self, rf_settings, formfactor):
         x = torch.concatenate([rf_settings, formfactor], dim=1)
