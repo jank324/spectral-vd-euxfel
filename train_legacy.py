@@ -1,6 +1,7 @@
 import time
 
 from lightning import Trainer
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 
 from dataset import EuXFELCurrentDataModule
@@ -22,12 +23,17 @@ def main():
         learning_rate=config["learning_rate"],
     )
 
+    early_stopping_callback = EarlyStopping(
+        monitor="validate/loss", mode="min", patience=10
+    )
+
     trainer = Trainer(
         max_epochs=config["max_epochs"],
         logger=wandb_logger,
         accelerator="auto",
         devices="auto",
         log_every_n_steps=50,
+        callbacks=early_stopping_callback,
     )
     trainer.fit(model, data_module)
 
