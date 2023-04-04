@@ -162,9 +162,9 @@ class SupervisedCurrentProfileInference(LightningModule):
         length_loss = self.length_criterion(predicted_lengths, true_lengths)
         loss = current_loss + length_loss
 
-        self.log("validate/current_loss", current_loss)
-        self.log("validate/length_loss", length_loss)
-        self.log("validate/loss", loss)
+        self.log("validate/current_loss", current_loss, sync_dist=True)
+        self.log("validate/length_loss", length_loss, sync_dist=True)
+        self.log("validate/loss", loss, sync_dist=True)
 
         if batch_idx == 0:
             self.log_current_profile_sample_plot(
