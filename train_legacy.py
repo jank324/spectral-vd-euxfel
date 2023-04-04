@@ -9,7 +9,15 @@ from legacy import SupervisedCurrentProfileInference
 
 
 def main():
-    config = {"batch_size": 64, "learning_rate": 1e-3, "max_epochs": 10_000}
+    config = {
+        "batch_normalization": False,
+        "batch_size": 64,
+        "hidden_activation": "relu",
+        "hidden_layer_width": 100,
+        "learning_rate": 1e-3,
+        "max_epochs": 10_000,
+        "num_hidden_layers": 3,
+    }
 
     wandb_logger = WandbLogger(
         project="virtual-diagnostics-euxfel-current-legacy", config=config
@@ -20,7 +28,11 @@ def main():
         batch_size=config["batch_size"], num_workers=0, normalize=True
     )
     model = SupervisedCurrentProfileInference(
+        batch_normalization=config["batch_normalization"],
+        hidden_activation=config["hidden_activation"],
+        hidden_layer_width=config["hidden_layer_width"],
         learning_rate=config["learning_rate"],
+        num_hidden_layers=config["num_hidden_layers"],
     )
 
     early_stopping_callback = EarlyStopping(

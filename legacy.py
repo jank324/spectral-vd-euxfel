@@ -1,3 +1,5 @@
+from typing import Optional
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -22,25 +24,77 @@ class MLPCurrentPredictor(nn.Module):
         rf_settings: int = 5,
         formfactor_samples: int = 240,
         current_samples: int = 300,
+        num_hidden_layers: int = 3,
+        hidden_layer_width: int = 100,
+        hidden_activation: str = "relu",
+        hidden_activation_args: dict = {},
+        batch_normalization: bool = True,
     ):
         super().__init__()
 
-        self.hidden_net = nn.Sequential(
-            nn.Linear(rf_settings + formfactor_samples, 200),
-            nn.ReLU(),
-            nn.Linear(200, 100),
-            nn.ReLU(),
-            nn.Linear(100, 50),
-            nn.ReLU(),
+        input_dims = rf_settings + formfactor_samples
+        self.input_layer = self.hidden_block(
+            input_dims,
+            hidden_layer_width,
+            activation=hidden_activation,
+            activation_args=hidden_activation_args,
         )
 
+        blocks = [
+            self.hidden_block(
+                in_features=hidden_layer_width,
+                out_features=hidden_layer_width,
+                activation=hidden_activation,
+                activation_args=hidden_activation_args,
+                batch_normalization=batch_normalization,
+                bias=not batch_normalization,
+            )
+            for _ in range(num_hidden_layers - 1)
+        ]
+        self.hidden_net = nn.Sequential(*blocks)
+
         self.current_profile_layer = nn.Sequential(
-            nn.Linear(50, current_samples), nn.Softplus()
+            nn.Linear(hidden_layer_width, current_samples), nn.Softplus()
         )
-        self.bunch_length_layer = nn.Sequential(nn.Linear(50, 1), nn.Softplus())
+        self.bunch_length_layer = nn.Sequential(
+            nn.Linear(hidden_layer_width, 1), nn.Softplus()
+        )
+
+    def hidden_block(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        activation: Optional[str] = None,
+        activation_args: dict = {},
+        batch_normalization: bool = False,
+    ):
+        """
+        Create a block of a linear layer and an activation, meant to be used as a hidden
+        layer in this architecture.
+        """
+        if activation == "relu":
+            activation_module = nn.ReLU(**activation_args)
+        elif activation == "leakyrelu":
+            activation_module = nn.LeakyReLU(**activation_args)
+        elif activation == "softplus":
+            activation_module = nn.Softplus(**activation_args)
+        elif activation == "sigmoid":
+            activation_module = nn.Sigmoid(**activation_args)
+        elif activation == "tanh":
+            activation_module = nn.Tanh(**activation_args)
+        else:
+            activation_module = nn.Identity()
+
+        return nn.Sequential(
+            nn.Linear(in_features, out_features, bias),
+            nn.BatchNorm1d(out_features) if batch_normalization else nn.Identity(),
+            activation_module,
+        )
 
     def forward(self, rf_settings, formfactor):
         x = torch.concatenate([rf_settings, formfactor], dim=1)
+        x = self.input_layer(x)
         x = self.hidden_net(x)
         current_profile = self.current_profile_layer(x)
         bunch_length = self.bunch_length_layer(x)
