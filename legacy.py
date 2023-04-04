@@ -107,6 +107,11 @@ class SupervisedCurrentProfileInference(LightningModule):
     def __init__(
         self,
         learning_rate: float = 1e-3,
+        num_hidden_layers: int = 3,
+        hidden_layer_width: int = 100,
+        hidden_activation: str = "relu",
+        hidden_activation_args: dict = {},
+        batch_normalization: bool = True,
     ):
         super().__init__()
 
@@ -115,7 +120,13 @@ class SupervisedCurrentProfileInference(LightningModule):
         self.save_hyperparameters()
         self.example_input_array = [torch.rand(1, 5), torch.rand(1, 240)]
 
-        self.net = MLPCurrentPredictor()
+        self.net = MLPCurrentPredictor(
+            num_hidden_layers=num_hidden_layers,
+            hidden_layer_width=hidden_layer_width,
+            hidden_activation=hidden_activation,
+            hidden_activation_args=hidden_activation_args,
+            batch_normalization=batch_normalization,
+        )
 
         self.current_criterion = nn.MSELoss()
         self.length_criterion = nn.MSELoss()
