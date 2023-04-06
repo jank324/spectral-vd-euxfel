@@ -46,7 +46,6 @@ def main():
         devices="auto",
         log_every_n_steps=50,
         callbacks=early_stopping_callback,
-        fast_dev_run=True,
     )
     trainer.fit(model, data_module)
 

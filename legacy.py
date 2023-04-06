@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -421,15 +420,12 @@ class SupervisedLPSInference(LightningModule):
         Logs a plot comparing the real longirudinal phase spaces to the generated ones
         to Weights & Biases.
         """
-        white_under_rainbow = deepcopy(plt.cm.get_cmap("rainbow"))
-        white_under_rainbow.set_under("w")
-
         real_lps_image_batch = real_lps_image_batch.cpu().detach().numpy()
         real_lps_range_batch = real_lps_range_batch.cpu().detach().numpy()
         fake_lps_image_batch = fake_lps_image_batch.cpu().detach().numpy()
         fake_lps_range_batch = fake_lps_range_batch.cpu().detach().numpy()
 
-        fig, axs = plt.subplots(2, 8, sharex="col", sharey="col")
+        fig, axs = plt.subplots(2, 8, figsize=(24, 6))
         for i in range(8):
             axs[0, i].set_title("Fake")
             axs[0, i].imshow(
@@ -440,13 +436,14 @@ class SupervisedLPSInference(LightningModule):
                     -fake_lps_range_batch[i, 1] / 2,
                     fake_lps_range_batch[i, 1] / 2,
                 ),
-                cmap=white_under_rainbow,
+                vmin=0,
+                aspect="auto",
             )
             axs[0, i].set_xlabel("s")
-            axs[0, i].set_xlabel("Engergy spread")
+            axs[0, i].set_ylabel("Engergy spread")
 
-            axs[0, i].set_title("Real")
-            axs[0, i].imshow(
+            axs[1, i].set_title("Real")
+            axs[1, i].imshow(
                 real_lps_image_batch[i],
                 extent=(
                     -real_lps_range_batch[i, 0] / 2,
@@ -454,9 +451,12 @@ class SupervisedLPSInference(LightningModule):
                     -real_lps_range_batch[i, 1] / 2,
                     real_lps_range_batch[i, 1] / 2,
                 ),
-                cmap=white_under_rainbow,
+                vmin=0,
+                aspect="auto",
             )
-            axs[0, i].set_xlabel("s")
-            axs[0, i].set_xlabel("Engergy spread")
+            axs[1, i].set_xlabel("s")
+            axs[1, i].set_ylabel("Engergy spread")
+
+        fig.set_layout_engine("tight")
 
         wandb.log({"real_vs_fake_validation_plot": fig})
