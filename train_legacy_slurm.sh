@@ -12,7 +12,7 @@ source ~/.bashrc
 conda activate spectral-vd-euxfel
 cd /home/kaiserja/beegfs/spectral-vd-euxfel
 
-# srun python train_legacy.py
+# srun python train_legacy_current.py
 srun wandb agent --count 1 msk-ipc/virtual-diagnostics-euxfel-current-legacy/890897om
 
 exit
