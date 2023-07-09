@@ -3,8 +3,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from reconstruction_module import *
-
-speed_of_light = 299792458.0  # m/s
+from scipy.constants import speed_of_light
 
 
 def reconstruction(freq, FF_list_crisp):
