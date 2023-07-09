@@ -29,8 +29,8 @@ def reconstruction(freq, FF_list_crisp):
     return crisp_recon_time, crisp_recon_current
 
 
-data_lh_off = pickle.load(open("LH_OFF.pkl", "rb"))
-data_lh_on = pickle.load(open("LH_4000.pkl", "rb"))
+data_lh_off = pickle.load(open("sergeys_data_paper_code/LH_OFF.pkl", "rb"))
+data_lh_on = pickle.load(open("sergeys_data_paper_code/LH_4000.pkl", "rb"))
 
 
 fig, (ax1, ax2) = plt.subplots(2, 1)
@@ -58,7 +58,7 @@ ax2.set_ylabel("LH OFF: I [A]")
 
 plt.show()
 
-rf_params = pickle.load(open("rf_params.pkl", "rb"))
+rf_params = pickle.load(open("sergeys_data_paper_code/rf_params.pkl", "rb"))
 key_data = [  # Injector - stays constant during scan
     "XFEL.RF/LLRF.CONTROLLER/CTRL.A1.I1/SP.PHASE",  # A1 phase
     "XFEL.RF/LLRF.CONTROLLER/CTRL.A1.I1/SP.AMPL",  # A1 ampl
@@ -85,7 +85,7 @@ key_data = [  # Injector - stays constant during scan
     "chirp",  # L1 chirp
     # L2 did not touch
     "XFEL.RF/LLRF.SUMVOLTAGE_CTRL/L2/SUMVOLTAGE.AMPLITUDE.SP.1",  # L2 amplitude
-    "XFEL.RF/LLRF.SUMVOLTAGE_CTRL/L2/SUMVOLTAGE.CHIRP.SP.1",  # L2 amplitude
+    "XFEL.RF/LLRF.SUMVOLTAGE_CTRL/L2/SUMVOLTAGE.CHIRP.SP.1",  # L2 chirp
 ]
 
 for i, chirp in enumerate(rf_params["chirp"]):
