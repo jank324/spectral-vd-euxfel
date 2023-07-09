@@ -29,8 +29,8 @@ def reconstruction(freq, FF_list_crisp):
     return crisp_recon_time, crisp_recon_current
 
 
-data_lh_off = pickle.load(open("LH_OFF.p", "rb"))
-data_lh_on = pickle.load(open("LH_4000.p", "rb"))
+data_lh_off = pickle.load(open("LH_OFF.pkl", "rb"))
+data_lh_on = pickle.load(open("LH_4000.pkl", "rb"))
 
 
 fig, (ax1, ax2) = plt.subplots(2, 1)
@@ -58,7 +58,7 @@ ax2.set_ylabel("LH OFF: I [A]")
 
 plt.show()
 
-rf_params = pickle.load(open("rf_params.p", "rb"))
+rf_params = pickle.load(open("rf_params.pkl", "rb"))
 key_data = [  # Injector - stays constant during scan
     "XFEL.RF/LLRF.CONTROLLER/CTRL.A1.I1/SP.PHASE",  # A1 phase
     "XFEL.RF/LLRF.CONTROLLER/CTRL.A1.I1/SP.AMPL",  # A1 ampl
