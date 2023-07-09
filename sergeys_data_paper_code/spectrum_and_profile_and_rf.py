@@ -2,8 +2,9 @@ import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
-from reconstruction_module import *
 from scipy.constants import speed_of_light
+
+from .reconstruction_module import get_noise_detlim, master_recon
 
 
 def reconstruction(freq, FF_list_crisp):

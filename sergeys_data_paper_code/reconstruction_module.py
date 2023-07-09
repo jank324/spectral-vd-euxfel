@@ -2,7 +2,7 @@
 """
 Created on Thu Aug  1 15:11:54 2019
 
-Module for the different tasks that need to be done to reconstruct the current 
+Module for the different tasks that need to be done to reconstruct the current
 profile from a formfactor measurement
 
 @author: lockmann
@@ -11,7 +11,6 @@ profile from a formfactor measurement
 import matplotlib.pylab as plt
 import numpy as np
 from scipy import interpolate
-from scipy.io import loadmat
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 
@@ -237,7 +236,7 @@ def make_linear_spacing(
 
 
 """
-Models to fit the formfactors to. 
+Models to fit the formfactors to.
 """
 
 
