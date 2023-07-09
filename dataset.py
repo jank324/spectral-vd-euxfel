@@ -192,6 +192,9 @@ class EuXFELLPSDataset(Dataset):
 
     `X` is RF settings and the formfactors. `y` is the longitudinal phase space density
     image and its dimensions (bunch length and energy spread).
+
+    NOTE: As it stands now LPS images must be transposed for correct plotting with s on
+    x and energy spread on y.
     """
 
     particle_dir = Path("data/zihan/particles")
